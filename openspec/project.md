@@ -16,9 +16,12 @@
 ```
 app/                пакет приложения
   __init__.py       фабрика create_app, конфигурация из env
-  routes.py         HTTP-роуты
+  routes.py         HTTP-роуты (страницы + /api/*)
+  services/         бизнес-логика: uploads, conversion (+docx_converter),
+                    diffing, llm, jobs
   templates/        Jinja2-шаблоны
-tests/              тесты pytest
+  static/           app.js, style.css (vanilla frontend)
+tests/              тесты pytest (LLM мокается, сеть не используется)
 openspec/           спецификации OpenSpec (specs/, changes/)
 uploads/            каталог загрузок (не коммитится, путь из UPLOAD_DIR)
 ```

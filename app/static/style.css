@@ -1,0 +1,206 @@
+/* Палитра: желто-зелено-серая */
+:root {
+    --green: #4caf50;
+    --green-dark: #3d8b40;
+    --green-light: #c8e6c9;
+    --yellow: #f9d423;
+    --yellow-light: #fff3c4;
+    --red-light: #ffcdd2;
+    --gray-100: #f5f5f5;
+    --gray-200: #e0e0e0;
+    --gray-400: #9e9e9e;
+    --gray-700: #424242;
+    --gray-900: #212121;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: "Segoe UI", Arial, sans-serif;
+    background: var(--gray-100);
+    color: var(--gray-900);
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+h1 {
+    font-size: 1.5rem;
+    margin-bottom: 8px;
+}
+
+p {
+    color: var(--gray-700);
+    margin-bottom: 16px;
+}
+
+/* Зоны загрузки */
+.upload-zones {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.upload-zone {
+    flex: 1;
+    border: 2px dashed var(--yellow);
+    border-radius: 8px;
+    background: var(--gray-200);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    transition: background 0.15s;
+}
+
+.upload-zone.dragover {
+    background: var(--yellow-light);
+}
+
+.upload-zone.loaded {
+    border-style: solid;
+    border-color: var(--green);
+}
+
+.zone-label {
+    font-weight: 600;
+    color: var(--gray-700);
+}
+
+.zone-filename {
+    color: var(--gray-900);
+    font-size: 0.9rem;
+    word-break: break-all;
+}
+
+/* Кнопки */
+.btn {
+    background: var(--green);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 18px;
+    font-size: 0.95rem;
+    cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+    background: var(--green-dark);
+}
+
+.btn:disabled {
+    background: var(--gray-400);
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    padding: 12px 28px;
+    font-size: 1.05rem;
+}
+
+.actions {
+    margin-bottom: 16px;
+}
+
+/* Статус и спиннер */
+.status {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--yellow);
+    border-radius: 8px;
+    background: var(--gray-200);
+    margin-bottom: 16px;
+}
+
+.spinner {
+    width: 22px;
+    height: 22px;
+    border: 3px solid var(--gray-400);
+    border-top-color: var(--green);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.error-message {
+    padding: 12px;
+    border: 1px solid var(--red-light);
+    border-radius: 8px;
+    background: var(--red-light);
+    color: var(--gray-900);
+    margin-bottom: 16px;
+}
+
+.degraded-notice {
+    padding: 12px;
+    border: 1px solid var(--yellow);
+    border-radius: 8px;
+    background: var(--yellow-light);
+    color: var(--gray-700);
+    margin-bottom: 16px;
+}
+
+/* Diff viewer */
+.diff-container {
+    display: flex;
+    gap: 16px;
+}
+
+.diff-panel {
+    flex: 1;
+    border: 2px solid var(--yellow);
+    border-radius: 8px;
+    background: #fff;
+    max-height: 70vh;
+    overflow: auto;
+}
+
+.diff-panel h2 {
+    position: sticky;
+    top: 0;
+    font-size: 1rem;
+    padding: 10px 14px;
+    background: var(--gray-200);
+    color: var(--gray-700);
+    border-bottom: 1px solid var(--yellow);
+}
+
+.diff-content {
+    padding: 8px 0;
+}
+
+.diff-block {
+    padding: 6px 14px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    min-height: 1.6em;
+    border-bottom: 1px solid var(--gray-100);
+}
+
+.diff-block.placeholder {
+    background: var(--gray-100);
+}
+
+.diff-block.change-changed {
+    background: var(--green-light);
+}
+
+.diff-block.change-removed {
+    background: var(--red-light);
+}
+
+.diff-block.change-added {
+    background: var(--yellow-light);
+}

@@ -19,8 +19,23 @@ flask run
 
 Приложение будет доступно по адресу http://127.0.0.1:5000
 
-- `GET /` — главная страница
+- `GET /` — главная страница (загрузка файлов, статусы, diff viewer)
 - `GET /health` — проверка состояния (`{"status": "ok"}`)
+- `POST /api/upload` — загрузка файла (multipart, поле `file`) → `{"upload_id", "filename"}`
+- `POST /api/compare` — запуск сравнения (`{"upload_id_1", "upload_id_2"}`) → `202 {"job_id"}`
+- `GET /api/jobs/<job_id>` — статус задачи: `processing` (с `stage_message`),
+  `done` (с `result`) или `failed` (с `error`). Клиент опрашивает раз в 3 секунды
+
+## Как это работает
+
+1. Загруженные `.docx` конвертируются в Markdown (`python-docx`).
+2. Markdown разбивается на блоки (заголовки, абзацы, строки таблиц),
+   различия ищутся алгоритмически (`difflib`).
+3. Каждый различающийся фрагмент классифицируется LLM
+   (изменено / удалено / добавлено). Если LLM недоступна, классификация
+   выполняется по опкодам difflib, а результат помечается
+   `semantic: false` (в UI — уведомление о деградации).
+4. Результат отображается side-by-side с подсветкой и синхронным скроллом.
 
 ## Тесты
 
@@ -48,6 +63,8 @@ pytest
 
 ```
 app/            пакет приложения (фабрика create_app, роуты, шаблоны)
-tests/          тесты pytest
+  services/     бизнес-логика: uploads, conversion, diffing, llm, jobs
+  static/       app.js, style.css (vanilla frontend)
+tests/          тесты pytest (LLM замокана, сеть не используется)
 openspec/       спецификации и change-предложения (OpenSpec)
 ```
