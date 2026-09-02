@@ -55,6 +55,7 @@ pytest
 | `LLM_BASE_URL`       | Базовый URL OpenAI-совместимого LLM API   |
 | `LLM_API_KEY`        | API-ключ LLM                              |
 | `LLM_MODEL`          | Название модели LLM                       |
+| `LLM_EXTRA_BODY`     | Доп. параметры тела запроса к LLM (JSON, опционально) |
 | `UPLOAD_DIR`         | Каталог для загружаемых файлов            |
 | `MAX_CONTENT_LENGTH` | Максимальный размер загрузки (байты)      |
 | `ALLOWED_EXTENSIONS` | Разрешённые расширения (через запятую)    |

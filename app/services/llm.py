@@ -39,6 +39,7 @@ def create_chat_model(config) -> ChatOpenAI:
         model=config["LLM_MODEL"],
         timeout=LLM_TIMEOUT,
         max_retries=0,  # ретраи выполняем сами по своим правилам
+        extra_body=config.get("LLM_EXTRA_BODY") or None,
     )
 
 

@@ -5,7 +5,7 @@ LLM заменяется моком: тесты детерминированы �
 
 from types import SimpleNamespace
 
-from app.services.llm import classify_fragment, classify_fragments
+from app.services.llm import classify_fragment, classify_fragments, create_chat_model
 
 
 class MockChat:
@@ -109,3 +109,25 @@ class TestClassifyFragments:
         results, semantic = classify_fragments([], MockChat([]))
         assert results == []
         assert semantic is True
+
+
+class TestCreateChatModel:
+    CONFIG = {
+        "LLM_BASE_URL": "http://localhost:1/v1",
+        "LLM_API_KEY": "key",
+        "LLM_MODEL": "qwen3-14b",
+        "LLM_EXTRA_BODY": None,
+    }
+
+    def test_without_extra_body(self):
+        chat = create_chat_model(self.CONFIG)
+        assert chat.extra_body is None
+        assert chat.model_name == "qwen3-14b"
+
+    def test_with_extra_body(self):
+        config = {
+            **self.CONFIG,
+            "LLM_EXTRA_BODY": {"chat_template_kwargs": {"enable_thinking": False}},
+        }
+        chat = create_chat_model(config)
+        assert chat.extra_body == {"chat_template_kwargs": {"enable_thinking": False}}
