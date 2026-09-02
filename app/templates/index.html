@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>file_compare — сравнение документов</title>
+</head>
+<body>
+    <h1>Сравнение версий документа</h1>
+    <p>Загрузите две версии документа (.docx) для сравнения.</p>
+    <form method="post" action="/compare" enctype="multipart/form-data">
+        <div>
+            <label for="file_old">Старая версия:</label>
+            <input type="file" id="file_old" name="file_old" accept=".docx">
+        </div>
+        <div>
+            <label for="file_new">Новая версия:</label>
+            <input type="file" id="file_new" name="file_new" accept=".docx">
+        </div>
+        <button type="submit">Сравнить</button>
+    </form>
+</body>
+</html>
