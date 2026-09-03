@@ -159,6 +159,22 @@ function renderBlock(block) {
         div.innerHTML = "&nbsp;";
         return div;
     }
+    // Изменённый блок с пословным diff: подсвечиваем только различающиеся
+    // слова (добавлено — зелёный, удалено — красный, изменено — жёлтый),
+    // фон всего блока не заливаем
+    if (block.segments) {
+        for (const seg of block.segments) {
+            if (seg.type === "same") {
+                div.appendChild(document.createTextNode(seg.text));
+            } else {
+                const span = document.createElement("span");
+                span.className = `seg-${seg.type}`;
+                span.textContent = seg.text;
+                div.appendChild(span);
+            }
+        }
+        return div;
+    }
     div.textContent = block.text;
     if (block.change) div.classList.add(`change-${block.change}`);
     return div;

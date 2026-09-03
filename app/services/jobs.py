@@ -4,7 +4,12 @@ import threading
 import uuid
 
 from app.services.conversion import convert_to_markdown
-from app.services.diffing import find_diffs, refine_fragments, split_blocks
+from app.services.diffing import (
+    find_diffs,
+    inline_diff,
+    refine_fragments,
+    split_blocks,
+)
 from app.services.llm import classify_fragments
 
 STAGE_MESSAGES = {
@@ -129,6 +134,12 @@ def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
                 if k < len(new)
                 else None
             )
+            # Изменённая пара: пословный diff для подсветки только
+            # различающихся слов (None — блоки слишком длинные)
+            if left and right and label["label"] == "changed":
+                segments = inline_diff(old[k], new[k])
+                if segments:
+                    left["segments"], right["segments"] = segments
             rows.append({"left": left, "right": right})
         pos1, pos2 = i2, j2
     emit_equal(len(blocks1), len(blocks2))

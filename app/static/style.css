@@ -204,3 +204,22 @@ p {
 .diff-block.change-added {
     background: var(--yellow-light);
 }
+
+/* Пословная подсветка внутри изменённого блока (git-стиль) */
+.seg-add {
+    background: var(--green-light);
+    border-bottom: 2px solid var(--green);
+    border-radius: 2px;
+}
+
+.seg-del {
+    background: var(--red-light);
+    border-bottom: 2px solid #e53935;
+    border-radius: 2px;
+}
+
+.seg-chg {
+    background: var(--yellow-light);
+    border-bottom: 2px solid var(--yellow);
+    border-radius: 2px;
+}

@@ -3,10 +3,12 @@
 Блок — заголовок, абзац или строка таблицы. Сравнение последовательностей
 блоков выполняется через difflib.SequenceMatcher. Фрагменты replace
 дополнительно уточняются по похожести блоков, чтобы отличать изменённые
-блоки от удалённых и добавленных.
+блоки от удалённых и добавленных. Для изменённых пар блоков вычисляется
+пословный diff (inline_diff) — для подсветки только различающихся слов.
 """
 
 import difflib
+import re
 
 # Порог похожести блоков (SequenceMatcher.ratio), при котором пара блоков
 # внутри replace-фрагмента считается изменением, а не удалением+добавлением
@@ -14,6 +16,12 @@ SIMILARITY_THRESHOLD = 0.6
 
 # Защита от квадратичного перебора на патологически больших фрагментах
 MAX_REFINE_PAIRS = 2500
+
+# Защита от квадратичного перебора токенов в очень длинных блоках
+MAX_INLINE_TOKENS = 2_000_000
+
+# Токены пословного diff: слова и не-слова (пробелы, знаки препинания)
+_TOKEN_RE = re.compile(r"\w+|\W+")
 
 
 def split_blocks(markdown: str) -> list[str]:
@@ -165,6 +173,58 @@ def _split_replace(frag: dict, threshold: float) -> list[dict]:
         pos_j = nj + 1
     emit_tail(len(old), len(new))
     return subs
+
+
+def _append_segment(segments: list[dict], text: str, seg_type: str) -> None:
+    """Добавляет сегмент, сливая соседние с одинаковым типом."""
+    if not text:
+        return
+    if segments and segments[-1]["type"] == seg_type:
+        segments[-1]["text"] += text
+    else:
+        segments.append({"text": text, "type": seg_type})
+
+
+def inline_diff(
+    old_text: str, new_text: str
+) -> tuple[list[dict], list[dict]] | None:
+    """Пословный diff внутри изменённой пары блоков.
+
+    Возвращает (left_segments, right_segments) — списки {"text", "type"},
+    где type: "same" (без изменений), "add" (добавлено в файле 2),
+    "del" (удалено из файла 1), "chg" (изменено, обе стороны).
+    Конкатенация text всех сегментов воспроизводит текст стороны.
+    Для патологически длинных блоков возвращает None.
+    """
+    old_tokens = _TOKEN_RE.findall(old_text)
+    new_tokens = _TOKEN_RE.findall(new_text)
+    if len(old_tokens) * len(new_tokens) > MAX_INLINE_TOKENS:
+        return None
+    matcher = difflib.SequenceMatcher(None, old_tokens, new_tokens, autojunk=False)
+    left: list[dict] = []
+    right: list[dict] = []
+    for opcode, i1, i2, j1, j2 in matcher.get_opcodes():
+        if opcode == "equal":
+            _append_segment(left, "".join(old_tokens[i1:i2]), "same")
+            _append_segment(right, "".join(new_tokens[j1:j2]), "same")
+        elif opcode == "replace":
+            # Похожие токены — «изменено» (chg), непохожие — «удалено»/«добавлено»
+            old_seg = old_tokens[i1:i2]
+            new_seg = new_tokens[j1:j2]
+            pos_o = pos_n = 0
+            for oi, nj in _match_pairs(old_seg, new_seg, SIMILARITY_THRESHOLD):
+                _append_segment(left, "".join(old_seg[pos_o:oi]), "del")
+                _append_segment(right, "".join(new_seg[pos_n:nj]), "add")
+                _append_segment(left, old_seg[oi], "chg")
+                _append_segment(right, new_seg[nj], "chg")
+                pos_o, pos_n = oi + 1, nj + 1
+            _append_segment(left, "".join(old_seg[pos_o:]), "del")
+            _append_segment(right, "".join(new_seg[pos_n:]), "add")
+        elif opcode == "delete":
+            _append_segment(left, "".join(old_tokens[i1:i2]), "del")
+        else:  # insert
+            _append_segment(right, "".join(new_tokens[j1:j2]), "add")
+    return left, right
 
 
 def refine_fragments(

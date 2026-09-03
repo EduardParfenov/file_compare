@@ -140,8 +140,22 @@ class TestJobStatus:
             "right": {"text": "А", "change": None},
         }
         assert rows[1] == {
-            "left": {"text": "ББ текст первый", "change": "changed"},
-            "right": {"text": "ББ текст второй", "change": "changed"},
+            "left": {
+                "text": "ББ текст первый",
+                "change": "changed",
+                "segments": [
+                    {"text": "ББ текст ", "type": "same"},
+                    {"text": "первый", "type": "del"},
+                ],
+            },
+            "right": {
+                "text": "ББ текст второй",
+                "change": "changed",
+                "segments": [
+                    {"text": "ББ текст ", "type": "same"},
+                    {"text": "второй", "type": "add"},
+                ],
+            },
         }
         assert rows[2] == {
             "left": {"text": "В", "change": None},
@@ -216,8 +230,28 @@ class TestJobStatus:
         rows = body["result"]["rows"]
         assert rows[0]["left"]["change"] is None
         assert rows[1] == {
-            "left": {"text": "Пункт второй: срок действия один год.", "change": "changed"},
-            "right": {"text": "Пункт второй: срок действия два года.", "change": "changed"},
+            "left": {
+                "text": "Пункт второй: срок действия один год.",
+                "change": "changed",
+                "segments": [
+                    {"text": "Пункт второй: срок действия ", "type": "same"},
+                    {"text": "один", "type": "del"},
+                    {"text": " ", "type": "same"},
+                    {"text": "год", "type": "chg"},
+                    {"text": ".", "type": "same"},
+                ],
+            },
+            "right": {
+                "text": "Пункт второй: срок действия два года.",
+                "change": "changed",
+                "segments": [
+                    {"text": "Пункт второй: срок действия ", "type": "same"},
+                    {"text": "два", "type": "add"},
+                    {"text": " ", "type": "same"},
+                    {"text": "года", "type": "chg"},
+                    {"text": ".", "type": "same"},
+                ],
+            },
         }
         assert rows[2] == {
             "left": {

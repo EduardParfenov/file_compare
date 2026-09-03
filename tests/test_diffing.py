@@ -1,6 +1,11 @@
 """Тесты алгоритмического diff по блокам Markdown (spec: document-diff)."""
 
-from app.services.diffing import find_diffs, refine_fragments, split_blocks
+from app.services.diffing import (
+    find_diffs,
+    inline_diff,
+    refine_fragments,
+    split_blocks,
+)
 
 
 class TestSplitBlocks:
@@ -158,3 +163,83 @@ class TestRefineFragments:
         new_covered = [j for f in frags for j in range(*f["new_range"])]
         assert old_covered == [3, 4, 5]
         assert new_covered == [5, 6, 7]
+
+
+class TestInlineDiff:
+    def test_added_word_marked_add_only_on_right(self):
+        # Дано в конец предложения добавлено одно слово
+        left, right = inline_diff(
+            "Пункт первый: текст предложения.",
+            "Пункт первый: текст предложения новый.",
+        )
+        # То на левой стороне нет различий, на правой новое слово — «добавлено»
+        assert left == [{"text": "Пункт первый: текст предложения.", "type": "same"}]
+        assert right == [
+            {"text": "Пункт первый: текст предложения", "type": "same"},
+            {"text": " новый", "type": "add"},
+            {"text": ".", "type": "same"},
+        ]
+
+    def test_removed_word_marked_del_only_on_left(self):
+        left, right = inline_diff("текст с лишним словом", "текст с словом")
+        assert left == [
+            {"text": "текст с ", "type": "same"},
+            {"text": "лишним ", "type": "del"},
+            {"text": "словом", "type": "same"},
+        ]
+        assert right == [{"text": "текст с словом", "type": "same"}]
+
+    def test_similar_replaced_word_marked_chg(self):
+        # Похожие слова (правка части слова) — «изменено» с обеих сторон
+        left, right = inline_diff("срок действия год", "срок действия года")
+        assert left == [
+            {"text": "срок действия ", "type": "same"},
+            {"text": "год", "type": "chg"},
+        ]
+        assert right == [
+            {"text": "срок действия ", "type": "same"},
+            {"text": "года", "type": "chg"},
+        ]
+
+    def test_dissimilar_swapped_word_marked_del_and_add(self):
+        # Непохожие слова (замена целиком) — «удалено» слева, «добавлено» справа
+        left, right = inline_diff("срок один год", "срок два год")
+        assert left == [
+            {"text": "срок ", "type": "same"},
+            {"text": "один", "type": "del"},
+            {"text": " год", "type": "same"},
+        ]
+        assert right == [
+            {"text": "срок ", "type": "same"},
+            {"text": "два", "type": "add"},
+            {"text": " год", "type": "same"},
+        ]
+
+    def test_letters_inserted_mid_word_marked_chg(self):
+        # Дано в середину слова добавлены буквы (слово изменено, а не добавлено)
+        left, right = inline_diff(
+            "слово сотрудничество здесь", "слово сотрудничXYество здесь"
+        )
+        # То всё слово помечено «изменено» на обеих сторонах
+        assert left == [
+            {"text": "слово ", "type": "same"},
+            {"text": "сотрудничество", "type": "chg"},
+            {"text": " здесь", "type": "same"},
+        ]
+        assert right == [
+            {"text": "слово ", "type": "same"},
+            {"text": "сотрудничXYество", "type": "chg"},
+            {"text": " здесь", "type": "same"},
+        ]
+
+    def test_segments_concatenate_to_original_text(self):
+        old = "Первый абзац, с пунктуацией! И числом 42."
+        new = "Первый абзац с пунктуацией? И числом 43."
+        left, right = inline_diff(old, new)
+        assert "".join(s["text"] for s in left) == old
+        assert "".join(s["text"] for s in right) == new
+
+    def test_identical_texts_have_only_same_segments(self):
+        left, right = inline_diff("одинаковый текст", "одинаковый текст")
+        assert all(s["type"] == "same" for s in left)
+        assert all(s["type"] == "same" for s in right)
