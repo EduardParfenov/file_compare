@@ -1,11 +1,10 @@
 """Задачи сравнения: in-memory store, этапные статусы, пайплайн обработки."""
 
-import difflib
 import threading
 import uuid
 
 from app.services.conversion import convert_to_markdown
-from app.services.diffing import find_diffs, split_blocks
+from app.services.diffing import find_diffs, refine_fragments, split_blocks
 from app.services.llm import classify_fragments
 
 STAGE_MESSAGES = {
@@ -67,7 +66,7 @@ def run_pipeline(job_id: str, path1: str, path2: str, chat) -> None:
         set_stage(job_id, "diffing")
         blocks1 = split_blocks(markdown1)
         blocks2 = split_blocks(markdown2)
-        fragments = find_diffs(blocks1, blocks2)
+        fragments = refine_fragments(find_diffs(blocks1, blocks2))
 
         set_stage(job_id, "llm")
         labels, semantic = classify_fragments(fragments, chat)
@@ -95,36 +94,42 @@ def _side_change(label: str, side: str) -> str | None:
 
 
 def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
-    """Выровненные строки side-by-side: {left, right}, None — пустое место."""
-    label_by_range = {
-        (f["old_range"], f["new_range"]): label["label"]
-        for f, label in zip(fragments, labels)
-    }
+    """Выровненные строки side-by-side: {left, right}, None — пустое место.
+
+    Фрагменты упорядочены и без пропусков покрывают различающиеся области;
+    промежутки между ними — одинаковые блоки обоих документов.
+    """
     rows = []
-    matcher = difflib.SequenceMatcher(None, blocks1, blocks2, autojunk=False)
-    for opcode, i1, i2, j1, j2 in matcher.get_opcodes():
-        if opcode == "equal":
-            for k in range(i2 - i1):
-                rows.append(
-                    {
-                        "left": {"text": blocks1[i1 + k], "change": None},
-                        "right": {"text": blocks2[j1 + k], "change": None},
-                    }
-                )
-            continue
-        label = label_by_range[((i1, i2), (j1, j2))]
+    pos1 = pos2 = 0  # позиции, до которых документы совпадают
+
+    def emit_equal(end1: int, end2: int) -> None:
+        nonlocal pos1, pos2
+        for k in range(end1 - pos1):
+            rows.append(
+                {
+                    "left": {"text": blocks1[pos1 + k], "change": None},
+                    "right": {"text": blocks2[pos2 + k], "change": None},
+                }
+            )
+        pos1, pos2 = end1, end2
+
+    for frag, label in zip(fragments, labels):
+        (i1, i2), (j1, j2) = frag["old_range"], frag["new_range"]
+        emit_equal(i1, j1)
         old = blocks1[i1:i2]
         new = blocks2[j1:j2]
         for k in range(max(len(old), len(new))):
             left = (
-                {"text": old[k], "change": _side_change(label, "left")}
+                {"text": old[k], "change": _side_change(label["label"], "left")}
                 if k < len(old)
                 else None
             )
             right = (
-                {"text": new[k], "change": _side_change(label, "right")}
+                {"text": new[k], "change": _side_change(label["label"], "right")}
                 if k < len(new)
                 else None
             )
             rows.append({"left": left, "right": right})
+        pos1, pos2 = i2, j2
+    emit_equal(len(blocks1), len(blocks2))
     return rows

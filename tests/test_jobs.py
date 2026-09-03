@@ -122,8 +122,8 @@ class TestJobStatus:
         # Дано два документа с одним изменённым абзацем
         app = make_app(MockChat(['{"label": "changed"}']))
         client = app.test_client()
-        id1 = upload_docx(client, "v1.docx", ["А", "Б", "В"])
-        id2 = upload_docx(client, "v2.docx", ["А", "Х", "В"])
+        id1 = upload_docx(client, "v1.docx", ["А", "ББ текст первый", "В"])
+        id2 = upload_docx(client, "v2.docx", ["А", "ББ текст второй", "В"])
         job_id = client.post(
             "/api/compare", json={"upload_id_1": id1, "upload_id_2": id2}
         ).get_json()["job_id"]
@@ -140,8 +140,8 @@ class TestJobStatus:
             "right": {"text": "А", "change": None},
         }
         assert rows[1] == {
-            "left": {"text": "Б", "change": "changed"},
-            "right": {"text": "Х", "change": "changed"},
+            "left": {"text": "ББ текст первый", "change": "changed"},
+            "right": {"text": "ББ текст второй", "change": "changed"},
         }
         assert rows[2] == {
             "left": {"text": "В", "change": None},
@@ -178,6 +178,63 @@ class TestJobStatus:
             "right": {"text": "Б", "change": "added"},
         }
 
+    def test_changed_removed_added_blocks_classified_separately(self, make_app):
+        # Дано документ с изменённым, удалённым и добавленным абзацами подряд
+        app = make_app(
+            MockChat(
+                ['{"label": "changed"}', '{"label": "removed"}', '{"label": "added"}']
+            )
+        )
+        client = app.test_client()
+        id1 = upload_docx(
+            client,
+            "v1.docx",
+            [
+                "Альфа, начало документа.",
+                "Пункт второй: срок действия один год.",
+                "Пункт третий: ответственность сторон по договору.",
+                "Омега, конец документа.",
+            ],
+        )
+        id2 = upload_docx(
+            client,
+            "v2.docx",
+            [
+                "Альфа, начало документа.",
+                "Пункт второй: срок действия два года.",
+                "Совершенно новый пункт про форс-мажор.",
+                "Омега, конец документа.",
+            ],
+        )
+        job_id = client.post(
+            "/api/compare", json={"upload_id_1": id1, "upload_id_2": id2}
+        ).get_json()["job_id"]
+
+        # То изменения различаются: зелёный — изменён, красный — удалён, жёлтый — добавлен
+        body = client.get(f"/api/jobs/{job_id}").get_json()
+        assert body["status"] == "done"
+        rows = body["result"]["rows"]
+        assert rows[0]["left"]["change"] is None
+        assert rows[1] == {
+            "left": {"text": "Пункт второй: срок действия один год.", "change": "changed"},
+            "right": {"text": "Пункт второй: срок действия два года.", "change": "changed"},
+        }
+        assert rows[2] == {
+            "left": {
+                "text": "Пункт третий: ответственность сторон по договору.",
+                "change": "removed",
+            },
+            "right": None,
+        }
+        assert rows[3] == {
+            "left": None,
+            "right": {
+                "text": "Совершенно новый пункт про форс-мажор.",
+                "change": "added",
+            },
+        }
+        assert rows[4]["left"]["change"] is None
+
     def test_failed_job_returns_error(self, make_app):
         # Дано файл с расширением .docx, но битым содержимым
         app = make_app(MockChat([]))
@@ -202,8 +259,8 @@ class TestJobStatus:
         # Дано LLM недоступна
         app = make_app(MockChat([ConnectionError("down")]))
         client = app.test_client()
-        id1 = upload_docx(client, "v1.docx", ["А", "Б"])
-        id2 = upload_docx(client, "v2.docx", ["А", "Х"])
+        id1 = upload_docx(client, "v1.docx", ["А", "ББ текст первый"])
+        id2 = upload_docx(client, "v2.docx", ["А", "ББ текст второй"])
         job_id = client.post(
             "/api/compare", json={"upload_id_1": id1, "upload_id_2": id2}
         ).get_json()["job_id"]

@@ -1,6 +1,6 @@
 """Тесты алгоритмического diff по блокам Markdown (spec: document-diff)."""
 
-from app.services.diffing import find_diffs, split_blocks
+from app.services.diffing import find_diffs, refine_fragments, split_blocks
 
 
 class TestSplitBlocks:
@@ -30,6 +30,12 @@ class TestSplitBlocks:
 
     def test_multiline_paragraph_is_one_block(self):
         assert split_blocks("строка 1\nстрока 2") == ["строка 1\nстрока 2"]
+
+    def test_whitespace_normalized(self):
+        # Неразрывные и повторные пробелы не должны порождать ложные различия
+        assert split_blocks("Текст с неразрывными   пробелами") == [
+            "Текст с неразрывными пробелами"
+        ]
 
 
 class TestFindDiffs:
@@ -76,3 +82,79 @@ class TestFindDiffs:
         new = ["А", "Х", "В", "Г"]
         diffs = find_diffs(old, new)
         assert [d["opcode"] for d in diffs] == ["replace", "insert"]
+
+
+class TestRefineFragments:
+    def test_mixed_change_delete_add(self):
+        # Дано изменённый, удалённый и добавленный абзацы подряд —
+        # difflib сливает их в один replace-фрагмент
+        old = [
+            "# А",
+            "Пункт второй: срок действия один год.",
+            "Пункт третий: ответственность сторон по договору.",
+            "Конец",
+        ]
+        new = [
+            "# А",
+            "Пункт второй: срок действия два года.",
+            "Совершенно новый пункт про форс-мажор.",
+            "Конец",
+        ]
+        # Когда выполняется уточнение фрагментов
+        frags = refine_fragments(find_diffs(old, new))
+        # То похожая пара — replace, непохожие — delete и insert
+        assert [f["opcode"] for f in frags] == ["replace", "delete", "insert"]
+        assert frags[0]["old_blocks"] == ["Пункт второй: срок действия один год."]
+        assert frags[0]["new_blocks"] == ["Пункт второй: срок действия два года."]
+        assert frags[1]["old_blocks"] == ["Пункт третий: ответственность сторон по договору."]
+        assert frags[1]["new_blocks"] == []
+        assert frags[2]["old_blocks"] == []
+        assert frags[2]["new_blocks"] == ["Совершенно новый пункт про форс-мажор."]
+
+    def test_dissimilar_blocks_become_delete_and_insert(self):
+        frag = {
+            "opcode": "replace",
+            "old_blocks": ["Старый абзац про одно"],
+            "new_blocks": ["Новый текст совсем о другом"],
+            "old_range": (0, 1),
+            "new_range": (0, 1),
+        }
+        frags = refine_fragments([frag])
+        assert [f["opcode"] for f in frags] == ["delete", "insert"]
+
+    def test_similar_pair_stays_replace(self):
+        frag = {
+            "opcode": "replace",
+            "old_blocks": ["Пункт второй: срок действия один год."],
+            "new_blocks": ["Пункт второй: срок действия два года."],
+            "old_range": (0, 1),
+            "new_range": (0, 1),
+        }
+        frags = refine_fragments([frag])
+        assert len(frags) == 1
+        assert frags[0]["opcode"] == "replace"
+
+    def test_non_replace_fragments_untouched(self):
+        frag = {
+            "opcode": "delete",
+            "old_blocks": ["Лишний абзац"],
+            "new_blocks": [],
+            "old_range": (0, 1),
+            "new_range": (1, 1),
+        }
+        assert refine_fragments([frag]) == [frag]
+
+    def test_subfragment_ranges_tile_original_range(self):
+        # Подфрагменты без пропусков покрывают область исходного фрагмента
+        frag = {
+            "opcode": "replace",
+            "old_blocks": ["aaaa общий текст", "bbbb удалён", "cccc общий текст"],
+            "new_blocks": ["aaaa общий текст!", "dddd добавлен", "cccc общий текст?"],
+            "old_range": (3, 6),
+            "new_range": (5, 8),
+        }
+        frags = refine_fragments([frag])
+        old_covered = [i for f in frags for i in range(*f["old_range"])]
+        new_covered = [j for f in frags for j in range(*f["new_range"])]
+        assert old_covered == [3, 4, 5]
+        assert new_covered == [5, 6, 7]
