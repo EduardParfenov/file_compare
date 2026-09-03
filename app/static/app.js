@@ -165,6 +165,19 @@ function pollJob(jobId) {
     timer = setInterval(tick, POLL_INTERVAL_MS);
 }
 
+function appendSegments(el, segments) {
+    for (const seg of segments) {
+        if (seg.type === "same") {
+            el.appendChild(document.createTextNode(seg.text));
+        } else {
+            const span = document.createElement("span");
+            span.className = `seg-${seg.type}`;
+            span.textContent = seg.text;
+            el.appendChild(span);
+        }
+    }
+}
+
 function renderBlock(block) {
     const div = document.createElement("div");
     div.className = "diff-block";
@@ -177,16 +190,7 @@ function renderBlock(block) {
     // слова (добавлено — зелёный, удалено — красный, изменено — жёлтый),
     // фон всего блока не заливаем
     if (block.segments) {
-        for (const seg of block.segments) {
-            if (seg.type === "same") {
-                div.appendChild(document.createTextNode(seg.text));
-            } else {
-                const span = document.createElement("span");
-                span.className = `seg-${seg.type}`;
-                span.textContent = seg.text;
-                div.appendChild(span);
-            }
-        }
+        appendSegments(div, block.segments);
         return div;
     }
     div.textContent = block.text;
@@ -194,12 +198,68 @@ function renderBlock(block) {
     return div;
 }
 
+// Строка результата относится к таблице: хотя бы одна сторона — строка
+// таблицы (cells или sep), другая — тоже строка таблицы или пустое место
+function isTableGroupRow(row) {
+    const ok = (b) => b === null || "cells" in b || b.sep === true;
+    const isTable = (b) => b !== null && ("cells" in b || b.sep === true);
+    return ok(row.left) && ok(row.right) && (isTable(row.left) || isTable(row.right));
+}
+
+// Строки таблицы приходят отдельными блоками — собираем в одну
+// HTML-таблицу. Первая строка данных — шапка (th), служебная строка-
+// разделитель (sep) пропускается. Разное число колонок дополняется
+// пустыми ячейками
+function renderTableSide(blocks) {
+    const div = document.createElement("div");
+    div.className = "diff-block diff-table";
+    const dataBlocks = blocks.filter((b) => b !== null && !b.sep);
+    if (dataBlocks.length === 0) {
+        div.classList.add("placeholder");
+        div.innerHTML = "&nbsp;";
+        return div;
+    }
+    const cols = Math.max(...dataBlocks.map((b) => b.cells.length));
+    const table = document.createElement("table");
+    dataBlocks.forEach((block, idx) => {
+        const tr = document.createElement("tr");
+        // added/removed — подсветка всей строки; changed — пословно в ячейках
+        if (block.change && !block.cell_segments) {
+            tr.classList.add(`change-${block.change}`);
+        }
+        for (let c = 0; c < cols; c++) {
+            const cellEl = document.createElement(idx === 0 ? "th" : "td");
+            if (block.cell_segments && block.cell_segments[c]) {
+                appendSegments(cellEl, block.cell_segments[c]);
+            } else if (c < block.cells.length) {
+                cellEl.textContent = block.cells[c];
+            }
+            tr.appendChild(cellEl);
+        }
+        table.appendChild(tr);
+    });
+    div.appendChild(table);
+    return div;
+}
+
 function renderResult(result) {
     els.contentLeft.innerHTML = "";
     els.contentRight.innerHTML = "";
-    for (const row of result.rows) {
-        els.contentLeft.appendChild(renderBlock(row.left));
-        els.contentRight.appendChild(renderBlock(row.right));
+    const rows = result.rows;
+    let i = 0;
+    while (i < rows.length) {
+        if (isTableGroupRow(rows[i])) {
+            let j = i;
+            while (j < rows.length && isTableGroupRow(rows[j])) j++;
+            const group = rows.slice(i, j);
+            els.contentLeft.appendChild(renderTableSide(group.map((row) => row.left)));
+            els.contentRight.appendChild(renderTableSide(group.map((row) => row.right)));
+            i = j;
+        } else {
+            els.contentLeft.appendChild(renderBlock(rows[i].left));
+            els.contentRight.appendChild(renderBlock(rows[i].right));
+            i++;
+        }
     }
     if (!result.semantic) els.degraded.hidden = false;
     els.diff.hidden = false;

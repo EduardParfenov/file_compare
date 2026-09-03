@@ -2,11 +2,15 @@
 
 import threading
 import uuid
+from itertools import zip_longest
 
 from app.services.conversion import convert_to_markdown
 from app.services.diffing import (
     find_diffs,
     inline_diff,
+    is_table_row,
+    is_table_separator,
+    parse_table_row,
     refine_fragments,
     split_blocks,
 )
@@ -98,6 +102,22 @@ def _side_change(label: str, side: str) -> str | None:
     return None
 
 
+def _enrich_table_block(block: dict) -> None:
+    """Добавляет структуру таблицы: cells для строк данных, sep для
+    служебной строки-разделителя (она не отображается как данные)."""
+    text = block["text"]
+    if not is_table_row(text):
+        return
+    if is_table_separator(text):
+        block["sep"] = True
+    else:
+        block["cells"] = parse_table_row(text)
+
+
+def _plain_segments(text: str) -> list[dict]:
+    return [{"text": text, "type": "same"}] if text else []
+
+
 def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
     """Выровненные строки side-by-side: {left, right}, None — пустое место.
 
@@ -110,12 +130,11 @@ def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
     def emit_equal(end1: int, end2: int) -> None:
         nonlocal pos1, pos2
         for k in range(end1 - pos1):
-            rows.append(
-                {
-                    "left": {"text": blocks1[pos1 + k], "change": None},
-                    "right": {"text": blocks2[pos2 + k], "change": None},
-                }
-            )
+            left = {"text": blocks1[pos1 + k], "change": None}
+            right = {"text": blocks2[pos2 + k], "change": None}
+            _enrich_table_block(left)
+            _enrich_table_block(right)
+            rows.append({"left": left, "right": right})
         pos1, pos2 = end1, end2
 
     for frag, label in zip(fragments, labels):
@@ -134,12 +153,27 @@ def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
                 if k < len(new)
                 else None
             )
+            if left:
+                _enrich_table_block(left)
+            if right:
+                _enrich_table_block(right)
             # Изменённая пара: пословный diff для подсветки только
-            # различающихся слов (None — блоки слишком длинные)
+            # различающихся слов (для строк таблиц — по ячейкам)
             if left and right and label["label"] == "changed":
-                segments = inline_diff(old[k], new[k])
-                if segments:
-                    left["segments"], right["segments"] = segments
+                if "cells" in left and "cells" in right:
+                    left_segs, right_segs = [], []
+                    for a, b in zip_longest(
+                        left["cells"], right["cells"], fillvalue=""
+                    ):
+                        pair = inline_diff(a, b) or (_plain_segments(a), _plain_segments(b))
+                        left_segs.append(pair[0])
+                        right_segs.append(pair[1])
+                    left["cell_segments"] = left_segs
+                    right["cell_segments"] = right_segs
+                elif "sep" not in left and "sep" not in right:
+                    segments = inline_diff(old[k], new[k])
+                    if segments:
+                        left["segments"], right["segments"] = segments
             rows.append({"left": left, "right": right})
         pos1, pos2 = i2, j2
     emit_equal(len(blocks1), len(blocks2))

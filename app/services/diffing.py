@@ -23,6 +23,52 @@ MAX_INLINE_TOKENS = 2_000_000
 # Токены пословного diff: слова и не-слова (пробелы, знаки препинания)
 _TOKEN_RE = re.compile(r"\w+|\W+")
 
+# Ячейка-разделитель Markdown-таблицы: "---", ":---", "---:", ":---:"
+_SEPARATOR_CELL_RE = re.compile(r"^:?-{2,}:?$")
+
+
+def is_table_row(text: str) -> bool:
+    """Строка Markdown-таблицы (начинается с `|`)."""
+    return text.lstrip().startswith("|")
+
+
+def parse_table_row(text: str) -> list[str]:
+    """Разбирает строку Markdown-таблицы в список ячеек.
+
+    Экранированный `\\|` внутри ячейки не разрезает её. Окантовочные
+    `|` по краям строки отбрасываются.
+    """
+    cells: list[str] = []
+    cell: list[str] = []
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "\\" and i + 1 < len(text) and text[i + 1] == "|":
+            cell.append("|")
+            i += 2
+        elif ch == "|":
+            cells.append(cell)
+            cell = []
+            i += 1
+        else:
+            cell.append(ch)
+            i += 1
+    cells.append(cell)
+    # Окантовочные пустые части от ведущей/замыкающей `|`
+    if cells and not "".join(cells[0]).strip():
+        cells = cells[1:]
+    if cells and not "".join(cells[-1]).strip():
+        cells = cells[:-1]
+    return ["".join(c).strip() for c in cells]
+
+
+def is_table_separator(text: str) -> bool:
+    """Строка-разделитель Markdown-таблицы (`| --- | --- |`)."""
+    if not is_table_row(text):
+        return False
+    cells = parse_table_row(text)
+    return bool(cells) and all(_SEPARATOR_CELL_RE.match(c) for c in cells)
+
 
 def split_blocks(markdown: str) -> list[str]:
     """Разбивает Markdown на упорядоченные блоки.

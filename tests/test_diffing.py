@@ -3,6 +3,8 @@
 from app.services.diffing import (
     find_diffs,
     inline_diff,
+    is_table_separator,
+    parse_table_row,
     refine_fragments,
     split_blocks,
 )
@@ -243,3 +245,31 @@ class TestInlineDiff:
         left, right = inline_diff("одинаковый текст", "одинаковый текст")
         assert all(s["type"] == "same" for s in left)
         assert all(s["type"] == "same" for s in right)
+
+
+class TestParseTableRow:
+    def test_basic_row(self):
+        assert parse_table_row("| A | B |") == ["A", "B"]
+
+    def test_escaped_pipe_does_not_split_cell(self):
+        assert parse_table_row("| Яблоко \\| красное | 100 |") == [
+            "Яблоко | красное",
+            "100",
+        ]
+
+    def test_row_without_border_pipes(self):
+        assert parse_table_row("A | B") == ["A", "B"]
+
+
+class TestIsTableSeparator:
+    def test_separator_row(self):
+        assert is_table_separator("| --- | --- |") is True
+
+    def test_separator_with_colons(self):
+        assert is_table_separator("|:---|---:|") is True
+
+    def test_data_row_is_not_separator(self):
+        assert is_table_separator("| A | B |") is False
+
+    def test_plain_text_is_not_separator(self):
+        assert is_table_separator("обычный текст") is False

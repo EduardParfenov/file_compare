@@ -242,6 +242,37 @@ p {
     background: var(--gray-100);
 }
 
+/* Таблицы */
+.diff-table {
+    padding: 6px 8px;
+    overflow-x: auto;
+}
+
+.diff-table table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+.diff-table th,
+.diff-table td {
+    border: 1px solid var(--gray-200);
+    padding: 4px 8px;
+    text-align: left;
+    vertical-align: top;
+}
+
+.diff-table th {
+    background: var(--gray-100);
+}
+
+.diff-table tr.change-removed {
+    background: var(--red-light);
+}
+
+.diff-table tr.change-added {
+    background: var(--yellow-light);
+}
+
 .diff-block.change-changed {
     background: var(--green-light);
 }
