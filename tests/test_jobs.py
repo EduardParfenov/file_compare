@@ -106,10 +106,11 @@ class TestJobStatus:
 
         # Когда клиент опрашивает статус
         response = client.get(f"/api/jobs/{job_id}")
-        # То статус «в обработке» и сообщение этапа на русском
+        # То статус «в обработке», ключ этапа и сообщение этапа на русском
         body = response.get_json()
         assert response.status_code == 200
         assert body["status"] == "processing"
+        assert body["stage"] == "diffing"
         assert body["stage_message"] == "Поиск различий..."
 
     def test_unknown_job_returns_404(self, make_app):

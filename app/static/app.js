@@ -10,9 +10,7 @@ const els = {
     names: { 1: document.getElementById("name1"), 2: document.getElementById("name2") },
     openButtons: { 1: document.getElementById("open1"), 2: document.getElementById("open2") },
     compare: document.getElementById("compare"),
-    status: document.getElementById("status"),
-    spinner: document.getElementById("spinner"),
-    statusMessage: document.getElementById("status-message"),
+    steps: Array.from(document.querySelectorAll("#stepper .step")),
     error: document.getElementById("error"),
     degraded: document.getElementById("degraded"),
     diff: document.getElementById("diff"),
@@ -80,20 +78,33 @@ function setupUploadZone(slot) {
     });
 }
 
-function setStatus(message, withSpinner) {
-    els.status.hidden = false;
-    els.spinner.hidden = !withSpinner;
-    els.statusMessage.textContent = message;
+// Степпер этапов: converting → diffing → llm
+const STAGES = ["converting", "diffing", "llm"];
+
+function resetStepper() {
+    els.steps.forEach((el) => el.classList.remove("active", "done", "error"));
 }
 
-function hideStatus() {
-    els.status.hidden = true;
+// jobStatus: "processing" | "done" | "failed"; stageKey — текущий этап или null
+function setStepper(stageKey, jobStatus) {
+    const current = STAGES.indexOf(stageKey);
+    els.steps.forEach((el, i) => {
+        el.classList.remove("active", "done", "error");
+        if (jobStatus === "done" || i < current) {
+            el.classList.add("done");
+        } else if (i === current && jobStatus === "failed") {
+            el.classList.add("error");
+        } else if (i === current && jobStatus === "processing") {
+            el.classList.add("active");
+        }
+    });
 }
 
 async function startCompare() {
     clearMessages();
     els.diff.hidden = true;
     els.compare.disabled = true;
+    resetStepper();
 
     let response;
     try {
@@ -121,7 +132,8 @@ async function startCompare() {
 }
 
 function pollJob(jobId) {
-    const timer = setInterval(async () => {
+    let timer = null;
+    const tick = async () => {
         let body;
         try {
             const response = await fetch(`/api/jobs/${jobId}`);
@@ -129,26 +141,28 @@ function pollJob(jobId) {
             if (!response.ok) throw new Error(body.error || `код ${response.status}`);
         } catch (err) {
             clearInterval(timer);
-            hideStatus();
             showError(`Ошибка опроса статуса: ${err.message}`);
             updateCompareButton();
             return;
         }
 
         if (body.status === "processing") {
-            setStatus(body.stage_message || "Обработка...", true);
+            setStepper(body.stage, "processing");
         } else if (body.status === "done") {
             clearInterval(timer);
-            hideStatus();
+            setStepper(body.stage, "done");
             renderResult(body.result);
             updateCompareButton();
         } else if (body.status === "failed") {
             clearInterval(timer);
-            hideStatus();
+            setStepper(body.stage, "failed");
             showError(body.error || "Сравнение завершилось ошибкой");
             updateCompareButton();
         }
-    }, POLL_INTERVAL_MS);
+    };
+    // Первый опрос — сразу, чтобы этапы были видны даже на быстрых задачах
+    tick();
+    timer = setInterval(tick, POLL_INTERVAL_MS);
 }
 
 function renderBlock(block) {

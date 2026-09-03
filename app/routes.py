@@ -78,6 +78,7 @@ def job_status(job_id):
     body = {
         "job_id": job["id"],
         "status": job["status"],
+        "stage": job["stage"],
         "stage_message": job["stage_message"],
     }
     if job["status"] == "done":

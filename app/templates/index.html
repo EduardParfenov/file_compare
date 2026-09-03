@@ -31,9 +31,18 @@
         </button>
     </div>
 
-    <div class="status" id="status" hidden>
-        <div class="spinner" id="spinner"></div>
-        <span class="status-message" id="status-message"></span>
+    <div class="stepper" id="stepper">
+        <div class="step" data-stage="converting">
+            <span class="step-dot"></span>Конвертация файлов
+        </div>
+        <div class="step-connector"></div>
+        <div class="step" data-stage="diffing">
+            <span class="step-dot"></span>Поиск различий
+        </div>
+        <div class="step-connector"></div>
+        <div class="step" data-stage="llm">
+            <span class="step-dot"></span>Анализ через LLM
+        </div>
     </div>
 
     <div class="error-message" id="error" hidden></div>
