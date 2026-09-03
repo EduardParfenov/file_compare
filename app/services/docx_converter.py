@@ -35,11 +35,32 @@ def _paragraph_to_markdown(paragraph: Paragraph) -> str | None:
     return text
 
 
+def _cell_text(cell) -> str:
+    """Текст ячейки в одну строку: переносы и множественные пробелы
+    сворачиваются в один пробел (переносы разрывают Markdown-строку)."""
+    return " ".join(cell.text.split()).replace("|", "\\|")
+
+
 def _table_to_markdown(table: Table) -> str | None:
-    rows = [
-        [cell.text.strip().replace("|", "\\|") for cell in row.cells]
-        for row in table.rows
-    ]
+    # Объединённые ячейки python-docx повторяет в row.cells (один и тот же
+    # tc): горизонтальный merge — соседняя ячейка в строке, вертикальный —
+    # ячейка из строки выше. Текст эмитируем один раз, повторы — пустые
+    rows = []
+    prev_tcs: list = []  # tc-элементы предыдущей строки
+    for row in table.rows:
+        cells = []
+        prev_tc = None
+        tcs = []
+        for cell in row.cells:
+            tc = cell._tc
+            tcs.append(tc)
+            if tc is prev_tc or any(tc is t for t in prev_tcs):
+                cells.append("")
+            else:
+                cells.append(_cell_text(cell))
+            prev_tc = tc
+        rows.append(cells)
+        prev_tcs = tcs
     if not rows:
         return None
     lines = ["| " + " | ".join(rows[0]) + " |"]
