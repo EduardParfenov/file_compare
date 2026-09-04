@@ -207,9 +207,8 @@ function isTableGroupRow(row) {
 }
 
 // Строки таблицы приходят отдельными блоками — собираем в одну
-// HTML-таблицу. Первая строка данных — шапка (th), служебная строка-
-// разделитель (sep) пропускается. Разное число колонок дополняется
-// пустыми ячейками
+// HTML-таблицу. Служебная строка-разделитель (sep) пропускается.
+// Разное число колонок дополняется пустыми ячейками
 function renderTableSide(blocks) {
     const div = document.createElement("div");
     div.className = "diff-block diff-table";
@@ -221,14 +220,14 @@ function renderTableSide(blocks) {
     }
     const cols = Math.max(...dataBlocks.map((b) => b.cells.length));
     const table = document.createElement("table");
-    dataBlocks.forEach((block, idx) => {
+    dataBlocks.forEach((block) => {
         const tr = document.createElement("tr");
         // added/removed — подсветка всей строки; changed — пословно в ячейках
         if (block.change && !block.cell_segments) {
             tr.classList.add(`change-${block.change}`);
         }
         for (let c = 0; c < cols; c++) {
-            const cellEl = document.createElement(idx === 0 ? "th" : "td");
+            const cellEl = document.createElement("td");
             if (block.cell_segments && block.cell_segments[c]) {
                 appendSegments(cellEl, block.cell_segments[c]);
             } else if (c < block.cells.length) {

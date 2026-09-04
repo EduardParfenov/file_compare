@@ -253,16 +253,11 @@ p {
     width: 100%;
 }
 
-.diff-table th,
 .diff-table td {
     border: 1px solid var(--gray-200);
     padding: 4px 8px;
     text-align: left;
     vertical-align: top;
-}
-
-.diff-table th {
-    background: var(--gray-100);
 }
 
 .diff-table tr.change-removed {
