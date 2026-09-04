@@ -4,20 +4,67 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>file_compare — сравнение документов</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <h1>Сравнение версий документа</h1>
-    <p>Загрузите две версии документа (.docx) для сравнения.</p>
-    <form method="post" action="/compare" enctype="multipart/form-data">
-        <div>
-            <label for="file_old">Старая версия:</label>
-            <input type="file" id="file_old" name="file_old" accept=".docx">
+    <header class="page-header">
+        <h1>Сравнение версий документа</h1>
+        <p>Загрузите две версии документа (.docx) для сравнения</p>
+    </header>
+
+    <div class="controls">
+    <div class="upload-zones">
+        <div class="upload-zone" id="zone1" data-slot="1">
+            <span class="zone-label">Файл 1 (исходный)</span>
+            <button type="button" class="btn" id="open1">Открыть файл 1</button>
+            <input type="file" id="file1" accept=".docx" hidden>
+            <span class="zone-filename" id="name1"></span>
         </div>
-        <div>
-            <label for="file_new">Новая версия:</label>
-            <input type="file" id="file_new" name="file_new" accept=".docx">
+        <div class="upload-zone" id="zone2" data-slot="2">
+            <span class="zone-label">Файл 2 (изменённый)</span>
+            <button type="button" class="btn" id="open2">Открыть файл 2</button>
+            <input type="file" id="file2" accept=".docx" hidden>
+            <span class="zone-filename" id="name2"></span>
         </div>
-        <button type="submit">Сравнить</button>
-    </form>
+    </div>
+
+    <div class="actions">
+        <button type="button" class="btn btn-primary" id="compare" disabled>
+            Начать сравнение
+        </button>
+    </div>
+
+    <div class="stepper" id="stepper">
+        <div class="step" data-stage="converting">
+            <span class="step-dot"></span>Конвертация файлов
+        </div>
+        <div class="step-connector"></div>
+        <div class="step" data-stage="diffing">
+            <span class="step-dot"></span>Поиск различий
+        </div>
+        <div class="step-connector"></div>
+        <div class="step" data-stage="llm">
+            <span class="step-dot"></span>Анализ через LLM
+        </div>
+    </div>
+
+    <div class="error-message" id="error" hidden></div>
+    <div class="degraded-notice" id="degraded" hidden>
+        LLM недоступна: классификация выполнена алгоритмически
+    </div>
+    </div>
+
+    <div class="diff-container" id="diff" hidden>
+        <div class="diff-panel" id="panel-left">
+            <h2>Файл 1</h2>
+            <div class="diff-content" id="content-left"></div>
+        </div>
+        <div class="diff-panel" id="panel-right">
+            <h2>Файл 2</h2>
+            <div class="diff-content" id="content-right"></div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

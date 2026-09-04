@@ -1,11 +1,26 @@
 """Application factory for file_compare."""
 
+import json
 import os
 
 from dotenv import load_dotenv
 from flask import Flask
 
 load_dotenv()
+
+
+def _parse_llm_extra_body() -> dict | None:
+    """LLM_EXTRA_BODY из env: JSON-объект либо None. Ошибка — fail fast."""
+    raw = os.environ.get("LLM_EXTRA_BODY", "").strip()
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"LLM_EXTRA_BODY содержит невалидный JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("LLM_EXTRA_BODY должен быть JSON-объектом")
+    return data
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -24,6 +39,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         LLM_BASE_URL=os.environ.get("LLM_BASE_URL", ""),
         LLM_API_KEY=os.environ.get("LLM_API_KEY", ""),
         LLM_MODEL=os.environ.get("LLM_MODEL", ""),
+        LLM_EXTRA_BODY=_parse_llm_extra_body(),
     )
 
     if test_config:
