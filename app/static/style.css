@@ -29,8 +29,20 @@ body {
     background: var(--gray-100);
     color: var(--gray-900);
     padding: 24px;
-    max-width: 1200px;
+    width: 90%;
+    max-width: 1920px;
     margin: 0 auto;
+}
+
+/* Центрированная колонка контролов (загрузка, кнопка, степпер, уведомления) */
+.controls {
+    max-width: 1150px;
+    margin: 0 auto;
+}
+
+/* Шапка страницы по центру */
+.page-header {
+    text-align: center;
 }
 
 h1 {
@@ -110,12 +122,14 @@ p {
 
 .actions {
     margin-bottom: 16px;
+    text-align: center;
 }
 
 /* Степпер этапов сравнения */
 .stepper {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 8px;
     margin-bottom: 16px;
 }
@@ -242,6 +256,15 @@ p {
     background: var(--gray-100);
 }
 
+/* Цветная заглушка по классу изменения противоположного блока */
+.diff-block.placeholder-removed {
+    background: var(--red-light);
+}
+
+.diff-block.placeholder-added {
+    background: var(--green-light);
+}
+
 /* Таблицы */
 .diff-table {
     padding: 6px 8px;
@@ -265,10 +288,16 @@ p {
 }
 
 .diff-table tr.change-added {
-    background: var(--yellow-light);
+    background: var(--green-light);
 }
 
-.diff-block.change-changed {
+/* Fallback изменённого блока/строки без пословного diff: старая версия
+   красным слева, новая зелёным справа (двухцветная модель) */
+#panel-left .change-changed {
+    background: var(--red-light);
+}
+
+#panel-right .change-changed {
     background: var(--green-light);
 }
 
@@ -277,10 +306,10 @@ p {
 }
 
 .diff-block.change-added {
-    background: var(--yellow-light);
+    background: var(--green-light);
 }
 
-/* Пословная подсветка внутри изменённого блока (git-стиль) */
+/* Пословная подсветка внутри изменённого блока (двухцветная модель) */
 .seg-add {
     background: var(--green-light);
     border-bottom: 2px solid var(--green);
@@ -293,8 +322,22 @@ p {
     border-radius: 2px;
 }
 
-.seg-chg {
-    background: var(--yellow-light);
-    border-bottom: 2px solid var(--yellow);
+/* Метка-полоса места удалённого/добавленного слова в противоположной панели */
+.seg-del-mark,
+.seg-add-mark {
+    display: inline-block;
+    width: 3px;
+    height: 1em;
+    vertical-align: text-bottom;
     border-radius: 2px;
+}
+
+.seg-del-mark {
+    background: var(--red-light);
+    border-bottom: 2px solid #e53935;
+}
+
+.seg-add-mark {
+    background: var(--green-light);
+    border-bottom: 2px solid var(--green);
 }

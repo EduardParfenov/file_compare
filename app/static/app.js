@@ -178,11 +178,12 @@ function appendSegments(el, segments) {
     }
 }
 
-function renderBlock(block) {
+function renderBlock(block, placeholderKind) {
     const div = document.createElement("div");
     div.className = "diff-block";
     if (block === null) {
         div.classList.add("placeholder");
+        if (placeholderKind) div.classList.add(`placeholder-${placeholderKind}`);
         div.innerHTML = "&nbsp;";
         return div;
     }
@@ -209,12 +210,13 @@ function isTableGroupRow(row) {
 // Строки таблицы приходят отдельными блоками — собираем в одну
 // HTML-таблицу. Служебная строка-разделитель (sep) пропускается.
 // Разное число колонок дополняется пустыми ячейками
-function renderTableSide(blocks) {
+function renderTableSide(blocks, placeholderKind) {
     const div = document.createElement("div");
     div.className = "diff-block diff-table";
     const dataBlocks = blocks.filter((b) => b !== null && !b.sep);
     if (dataBlocks.length === 0) {
         div.classList.add("placeholder");
+        if (placeholderKind) div.classList.add(`placeholder-${placeholderKind}`);
         div.innerHTML = "&nbsp;";
         return div;
     }
@@ -241,6 +243,43 @@ function renderTableSide(blocks) {
     return div;
 }
 
+// Тип заглушки (null-сторона) по классу изменения противоположной стороны
+function placeholderKind(other) {
+    if (other && (other.change === "removed" || other.change === "added")) {
+        return other.change;
+    }
+    return null;
+}
+
+// Тип заглушки табличной группы: класс изменения первого непустого блока
+// противоположной стороны
+function tablePlaceholderKind(otherBlocks) {
+    const block = otherBlocks.find((b) => b !== null && b.change);
+    return block ? block.change : null;
+}
+
+// Выравнивание высот парных блоков: обеим сторонам пары задаётся высота
+// большей, иначе содержимое панелей разъезжается при синхронной прокрутке
+function equalizeHeights() {
+    const leftChildren = els.contentLeft.children;
+    const rightChildren = els.contentRight.children;
+    const count = Math.min(leftChildren.length, rightChildren.length);
+    const pairs = [];
+    for (let i = 0; i < count; i++) {
+        const left = leftChildren[i];
+        const right = rightChildren[i];
+        left.style.minHeight = "";
+        right.style.minHeight = "";
+        pairs.push([left, right]);
+    }
+    // Сначала все измерения, потом все записи — без layout thrashing
+    for (const [left, right] of pairs) {
+        const height = Math.max(left.offsetHeight, right.offsetHeight);
+        left.style.minHeight = `${height}px`;
+        right.style.minHeight = `${height}px`;
+    }
+}
+
 function renderResult(result) {
     els.contentLeft.innerHTML = "";
     els.contentRight.innerHTML = "";
@@ -251,17 +290,29 @@ function renderResult(result) {
             let j = i;
             while (j < rows.length && isTableGroupRow(rows[j])) j++;
             const group = rows.slice(i, j);
-            els.contentLeft.appendChild(renderTableSide(group.map((row) => row.left)));
-            els.contentRight.appendChild(renderTableSide(group.map((row) => row.right)));
+            const leftBlocks = group.map((row) => row.left);
+            const rightBlocks = group.map((row) => row.right);
+            els.contentLeft.appendChild(
+                renderTableSide(leftBlocks, tablePlaceholderKind(rightBlocks))
+            );
+            els.contentRight.appendChild(
+                renderTableSide(rightBlocks, tablePlaceholderKind(leftBlocks))
+            );
             i = j;
         } else {
-            els.contentLeft.appendChild(renderBlock(rows[i].left));
-            els.contentRight.appendChild(renderBlock(rows[i].right));
+            els.contentLeft.appendChild(
+                renderBlock(rows[i].left, placeholderKind(rows[i].right))
+            );
+            els.contentRight.appendChild(
+                renderBlock(rows[i].right, placeholderKind(rows[i].left))
+            );
             i++;
         }
     }
     if (!result.semantic) els.degraded.hidden = false;
     els.diff.hidden = false;
+    // Измеряем только после того, как панели стали видимыми
+    equalizeHeights();
 }
 
 // Синхронный скролл панелей (без зацикливания через флаг)
@@ -281,3 +332,8 @@ setupUploadZone(2);
 els.compare.addEventListener("click", startCompare);
 syncScroll(els.panelLeft, els.panelRight);
 syncScroll(els.panelRight, els.panelLeft);
+
+// При изменении ширины окна переносы строк меняются — выравниваем заново
+window.addEventListener("resize", () => {
+    if (!els.diff.hidden) equalizeHeights();
+});

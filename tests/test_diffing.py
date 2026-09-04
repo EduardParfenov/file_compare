@@ -168,39 +168,61 @@ class TestRefineFragments:
 
 
 class TestInlineDiff:
-    def test_added_word_marked_add_only_on_right(self):
+    def test_added_word_marked_add_on_right_and_mark_on_left(self):
         # Дано в конец предложения добавлено одно слово
         left, right = inline_diff(
             "Пункт первый: текст предложения.",
             "Пункт первый: текст предложения новый.",
         )
-        # То на левой стороне нет различий, на правой новое слово — «добавлено»
-        assert left == [{"text": "Пункт первый: текст предложения.", "type": "same"}]
+        # То на правой стороне новое слово — «добавлено», а на левой
+        # на месте добавления стоит пустой маркер
+        assert left == [
+            {"text": "Пункт первый: текст предложения", "type": "same"},
+            {"text": "", "type": "add-mark"},
+            {"text": ".", "type": "same"},
+        ]
         assert right == [
             {"text": "Пункт первый: текст предложения", "type": "same"},
             {"text": " новый", "type": "add"},
             {"text": ".", "type": "same"},
         ]
 
-    def test_removed_word_marked_del_only_on_left(self):
+    def test_removed_word_marked_del_on_left_and_mark_on_right(self):
         left, right = inline_diff("текст с лишним словом", "текст с словом")
         assert left == [
             {"text": "текст с ", "type": "same"},
             {"text": "лишним ", "type": "del"},
             {"text": "словом", "type": "same"},
         ]
-        assert right == [{"text": "текст с словом", "type": "same"}]
+        assert right == [
+            {"text": "текст с ", "type": "same"},
+            {"text": "", "type": "del-mark"},
+            {"text": "словом", "type": "same"},
+        ]
 
-    def test_similar_replaced_word_marked_chg(self):
-        # Похожие слова (правка части слова) — «изменено» с обеих сторон
+    def test_replaced_word_has_no_marks(self):
+        # Замена слова: обе стороны подсвечены, маркеры не добавляются
+        left, right = inline_diff("срок один год", "срок два год")
+        assert all("mark" not in s["type"] for s in left)
+        assert all("mark" not in s["type"] for s in right)
+
+    def test_markers_do_not_change_concatenated_text(self):
+        # Пустой текст маркеров сохраняет инвариант конкатенации
+        left, right = inline_diff("текст с лишним словом", "текст с новым словом здесь")
+        assert "".join(s["text"] for s in left) == "текст с лишним словом"
+        assert "".join(s["text"] for s in right) == "текст с новым словом здесь"
+
+    def test_similar_replaced_word_marked_del_and_add(self):
+        # Похожие слова (правка части слова): старая версия — «удалено»,
+        # новая — «добавлено» (двухцветная модель, без отдельного «изменено»)
         left, right = inline_diff("срок действия год", "срок действия года")
         assert left == [
             {"text": "срок действия ", "type": "same"},
-            {"text": "год", "type": "chg"},
+            {"text": "год", "type": "del"},
         ]
         assert right == [
             {"text": "срок действия ", "type": "same"},
-            {"text": "года", "type": "chg"},
+            {"text": "года", "type": "add"},
         ]
 
     def test_dissimilar_swapped_word_marked_del_and_add(self):
@@ -217,20 +239,20 @@ class TestInlineDiff:
             {"text": " год", "type": "same"},
         ]
 
-    def test_letters_inserted_mid_word_marked_chg(self):
-        # Дано в середину слова добавлены буквы (слово изменено, а не добавлено)
+    def test_letters_inserted_mid_word_marked_del_and_add(self):
+        # Дано в середину слова добавлены буквы — слово заменено целиком:
+        # старая версия «удалена», новая «добавлена»
         left, right = inline_diff(
             "слово сотрудничество здесь", "слово сотрудничXYество здесь"
         )
-        # То всё слово помечено «изменено» на обеих сторонах
         assert left == [
             {"text": "слово ", "type": "same"},
-            {"text": "сотрудничество", "type": "chg"},
+            {"text": "сотрудничество", "type": "del"},
             {"text": " здесь", "type": "same"},
         ]
         assert right == [
             {"text": "слово ", "type": "same"},
-            {"text": "сотрудничXYество", "type": "chg"},
+            {"text": "сотрудничXYество", "type": "add"},
             {"text": " здесь", "type": "same"},
         ]
 

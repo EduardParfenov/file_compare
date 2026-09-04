@@ -260,7 +260,7 @@ class TestJobStatus:
                     {"text": "Пункт второй: срок действия ", "type": "same"},
                     {"text": "один", "type": "del"},
                     {"text": " ", "type": "same"},
-                    {"text": "год", "type": "chg"},
+                    {"text": "год", "type": "del"},
                     {"text": ".", "type": "same"},
                 ],
             },
@@ -271,7 +271,7 @@ class TestJobStatus:
                     {"text": "Пункт второй: срок действия ", "type": "same"},
                     {"text": "два", "type": "add"},
                     {"text": " ", "type": "same"},
-                    {"text": "года", "type": "chg"},
+                    {"text": "года", "type": "add"},
                     {"text": ".", "type": "same"},
                 ],
             },
@@ -313,11 +313,11 @@ class TestJobStatus:
         assert rows[2]["left"]["cells"] == ["Яблоки", "100"]
         assert rows[2]["left"]["cell_segments"] == [
             [{"text": "Яблоки", "type": "same"}],
-            [{"text": "100", "type": "chg"}],
+            [{"text": "100", "type": "del"}],
         ]
         assert rows[2]["right"]["cell_segments"] == [
             [{"text": "Яблоки", "type": "same"}],
-            [{"text": "150", "type": "chg"}],
+            [{"text": "150", "type": "add"}],
         ]
 
     def test_table_with_different_column_counts(self, make_app):
@@ -342,7 +342,8 @@ class TestJobStatus:
         assert len(data_row["left"]["cell_segments"]) == 3
         assert len(data_row["right"]["cell_segments"]) == 3
         assert data_row["right"]["cell_segments"][2] == [{"text": "3", "type": "add"}]
-        assert data_row["left"]["cell_segments"][2] == []
+        # На месте добавленной ячейки в левой стороне — пустой маркер
+        assert data_row["left"]["cell_segments"][2] == [{"text": "", "type": "add-mark"}]
 
     def test_failed_job_returns_error(self, make_app):
         # Дано файл с расширением .docx, но битым содержимым

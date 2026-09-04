@@ -238,7 +238,8 @@ def inline_diff(
 
     Возвращает (left_segments, right_segments) — списки {"text", "type"},
     где type: "same" (без изменений), "add" (добавлено в файле 2),
-    "del" (удалено из файла 1), "chg" (изменено, обе стороны).
+    "del" (удалено из файла 1), "add-mark"/"del-mark" (пустые метки места
+    добавления/удаления в противоположной панели).
     Конкатенация text всех сегментов воспроизводит текст стороны.
     Для патологически длинных блоков возвращает None.
     """
@@ -254,21 +255,17 @@ def inline_diff(
             _append_segment(left, "".join(old_tokens[i1:i2]), "same")
             _append_segment(right, "".join(new_tokens[j1:j2]), "same")
         elif opcode == "replace":
-            # Похожие токены — «изменено» (chg), непохожие — «удалено»/«добавлено»
-            old_seg = old_tokens[i1:i2]
-            new_seg = new_tokens[j1:j2]
-            pos_o = pos_n = 0
-            for oi, nj in _match_pairs(old_seg, new_seg, SIMILARITY_THRESHOLD):
-                _append_segment(left, "".join(old_seg[pos_o:oi]), "del")
-                _append_segment(right, "".join(new_seg[pos_n:nj]), "add")
-                _append_segment(left, old_seg[oi], "chg")
-                _append_segment(right, new_seg[nj], "chg")
-                pos_o, pos_n = oi + 1, nj + 1
-            _append_segment(left, "".join(old_seg[pos_o:]), "del")
-            _append_segment(right, "".join(new_seg[pos_n:]), "add")
+            # Двухцветная модель: «изменено» = удалена старая версия (del)
+            # + добавлена новая (add), отдельного типа «изменено» нет
+            _append_segment(left, "".join(old_tokens[i1:i2]), "del")
+            _append_segment(right, "".join(new_tokens[j1:j2]), "add")
         elif opcode == "delete":
             _append_segment(left, "".join(old_tokens[i1:i2]), "del")
+            # Метка места удаления в противоположной панели; пустой текст —
+            # конкатенация сегментов по-прежнему воспроизводит текст стороны
+            right.append({"text": "", "type": "del-mark"})
         else:  # insert
+            left.append({"text": "", "type": "add-mark"})
             _append_segment(right, "".join(new_tokens[j1:j2]), "add")
     return left, right
 
