@@ -2,7 +2,7 @@
 
 // Состояние загрузок: slot (1|2) -> upload_id
 const uploads = { 1: null, 2: null };
-const POLL_INTERVAL_MS = 3000;
+const POLL_INTERVAL_MS = 1000;
 
 const els = {
     zones: { 1: document.getElementById("zone1"), 2: document.getElementById("zone2") },

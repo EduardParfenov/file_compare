@@ -41,21 +41,17 @@ context: |
   - Перед коммитом прогонять `pytest`.
   - Язык кода и комментариев: английский идентификаторы, допустимы
     русские docstring/тексты UI.
+  - Каталог `input/` — рабочие заметки и черновики, не часть проекта:
+    читать и использовать эти файлы при работе над проектом запрещено.
 
   ## Правила безопасности
 
   - `.env` и реальные секреты никогда не коммитятся.
   - Ограничение размера загрузки — `MAX_CONTENT_LENGTH`.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+rules:
+  proposal:
+    - "Каждое предложение изменения должно содержать строку «уровень: несовместимое поведение» или «уровень: исправление», и при архивации версия проекта повышается соответствующим полем (major или patch)."
 
 # Per-operation guidance (optional)
 # Add advisory guidance for how apply and archive work should be conducted.
