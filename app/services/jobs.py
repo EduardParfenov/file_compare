@@ -114,8 +114,12 @@ def _enrich_table_block(block: dict) -> None:
         block["cells"] = parse_table_row(text)
 
 
-def _plain_segments(text: str) -> list[dict]:
-    return [{"text": text, "type": "same"}] if text else []
+def _cell_fallback_segments(a: str, b: str) -> tuple[list[dict], list[dict]]:
+    """Fallback при недоступности пословного diff: ячейка подсвечивается
+    целиком — красным в файле 1 (del), зелёным в файле 2 (add)."""
+    left = [{"text": a, "type": "del"}] if a else []
+    right = [{"text": b, "type": "add"}] if b else []
+    return left, right
 
 
 def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
@@ -165,7 +169,7 @@ def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
                     for a, b in zip_longest(
                         left["cells"], right["cells"], fillvalue=""
                     ):
-                        pair = inline_diff(a, b) or (_plain_segments(a), _plain_segments(b))
+                        pair = inline_diff(a, b) or _cell_fallback_segments(a, b)
                         left_segs.append(pair[0])
                         right_segs.append(pair[1])
                     left["cell_segments"] = left_segs

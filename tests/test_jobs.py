@@ -247,7 +247,10 @@ class TestJobStatus:
             "/api/compare", json={"upload_id_1": id1, "upload_id_2": id2}
         ).get_json()["job_id"]
 
-        # То изменения различаются: зелёный — изменён, красный — удалён, жёлтый — добавлен
+        # То изменения различаются по двухцветной модели: красный — удалённое
+        # (старая сторона, файл 1), зелёный — добавленное (новая сторона,
+        # файл 2); изменённый фрагмент — пара «красный в файле 1 + зелёный
+        # в файле 2», жёлтый в подсветке различий не используется
         body = client.get(f"/api/jobs/{job_id}").get_json()
         assert body["status"] == "done"
         rows = body["result"]["rows"]
@@ -344,6 +347,68 @@ class TestJobStatus:
         assert data_row["right"]["cell_segments"][2] == [{"text": "3", "type": "add"}]
         # На месте добавленной ячейки в левой стороне — пустой маркер
         assert data_row["left"]["cell_segments"][2] == [{"text": "", "type": "add-mark"}]
+
+    def test_table_cell_fallback_highlights_whole_cell(self, make_app, monkeypatch):
+        # Дано пословный diff недоступен для изменённой ячейки (inline_diff → None)
+        real_inline_diff = jobs.inline_diff
+
+        def fake_inline_diff(a, b):
+            if (a, b) == ("100", "150"):
+                return None
+            return real_inline_diff(a, b)
+
+        monkeypatch.setattr(jobs, "inline_diff", fake_inline_diff)
+        app = make_app(MockChat(['{"label": "changed"}']))
+        client = app.test_client()
+        id1 = upload_table_docx(client, "v1.docx", [["Товар", "Цена"], ["Яблоки", "100"]])
+        id2 = upload_table_docx(client, "v2.docx", [["Товар", "Цена"], ["Яблоки", "150"]])
+        job_id = client.post(
+            "/api/compare", json={"upload_id_1": id1, "upload_id_2": id2}
+        ).get_json()["job_id"]
+
+        # То изменённая ячейка подсвечена целиком: красным в файле 1,
+        # зелёным в файле 2 (двухцветная модель, общее правило fallback)
+        rows = client.get(f"/api/jobs/{job_id}").get_json()["result"]["rows"]
+        assert rows[2]["left"]["cell_segments"] == [
+            [{"text": "Яблоки", "type": "same"}],
+            [{"text": "100", "type": "del"}],
+        ]
+        assert rows[2]["right"]["cell_segments"] == [
+            [{"text": "Яблоки", "type": "same"}],
+            [{"text": "150", "type": "add"}],
+        ]
+
+    def test_two_color_model_segment_types(self, make_app):
+        # Дано задача с изменённым, удалённым и добавленным фрагментами
+        app = make_app(
+            MockChat(
+                ['{"label": "changed"}', '{"label": "removed"}', '{"label": "added"}']
+            )
+        )
+        client = app.test_client()
+        id1 = upload_docx(client, "v1.docx", ["А", "Б первый", "В удалённый"])
+        id2 = upload_docx(client, "v2.docx", ["А", "Б второй", "Г добавленный"])
+        job_id = client.post(
+            "/api/compare", json={"upload_id_1": id1, "upload_id_2": id2}
+        ).get_json()["job_id"]
+
+        # То подсветка двухцветная: только «красные» (del/del-mark) и
+        # «зелёные» (add/add-mark) типы сегментов, без других типов
+        rows = client.get(f"/api/jobs/{job_id}").get_json()["result"]["rows"]
+        segment_types = set()
+        changes = set()
+        for row in rows:
+            for side in (row["left"], row["right"]):
+                if not side:
+                    continue
+                changes.add(side["change"])
+                for seg in side.get("segments", []):
+                    segment_types.add(seg["type"])
+                for cell in side.get("cell_segments", []):
+                    for seg in cell:
+                        segment_types.add(seg["type"])
+        assert segment_types <= {"same", "del", "add", "del-mark", "add-mark"}
+        assert changes <= {"changed", "removed", "added", None}
 
     def test_failed_job_returns_error(self, make_app):
         # Дано файл с расширением .docx, но битым содержимым
