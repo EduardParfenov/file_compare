@@ -1,6 +1,7 @@
 """Тесты задач сравнения и пайплайна (spec: comparison-jobs)."""
 
 import io
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -102,7 +103,23 @@ class TestStartCompare:
         assert response.status_code == 202
         assert response.get_json()["job_id"]
 
-    def test_unknown_upload_id_returns_404(self, make_app):
+    @pytest.mark.parametrize("first_valid", [True, False])
+    def test_unknown_upload_id_returns_404(self, make_app, first_valid):
+        # Дано один или оба upload_id не существуют
+        client = make_app(MockChat([])).test_client()
+        valid_id = upload_docx(client, "v1.docx", ["А"])
+        response = client.post(
+            "/api/compare",
+            json={
+                "upload_id_1": valid_id if first_valid else "no-such",
+                "upload_id_2": "no-such" if first_valid else valid_id,
+            },
+        )
+        # То ответ 404 независимо от того, какой из id невалиден
+        assert response.status_code == 404
+        assert "error" in response.get_json()
+
+    def test_both_upload_ids_unknown_return_404(self, make_app):
         client = make_app(MockChat([])).test_client()
         response = client.post(
             "/api/compare",
@@ -120,20 +137,51 @@ class TestStartCompare:
 
 
 class TestJobStatus:
-    def test_processing_status_with_stage_message(self, make_app):
-        # Дано задача на этапе поиска различий
-        client = make_app(MockChat([])).test_client()
-        job_id = jobs.create_job()
-        jobs.set_stage(job_id, "diffing")
+    def test_threaded_job_pipeline_sets_stages_and_completes(self, tmp_path):
+        # Дано приложение в потоковом режиме (без JOBS_SYNCHRONOUS) и
+        # замедленная LLM, чтобы этап анализа можно было наблюдать
+        app = create_app(
+            {
+                "TESTING": True,
+                "UPLOAD_DIR": str(tmp_path / "uploads"),
+                "LLM_CHAT": MockChat(
+                    ['{"label": "changed"}'], on_invoke=lambda: time.sleep(0.2)
+                ),
+            }
+        )
+        client = app.test_client()
+        id1 = upload_docx(client, "v1.docx", ["А", "ББ текст первый"])
+        id2 = upload_docx(client, "v2.docx", ["А", "ББ текст второй"])
 
-        # Когда клиент опрашивает статус
-        response = client.get(f"/api/jobs/{job_id}")
-        # То статус «в обработке», ключ этапа и сообщение этапа на русском
-        body = response.get_json()
-        assert response.status_code == 200
+        # Когда задача запущена, ответ приходит немедленно (потоковый путь)
+        response = client.post(
+            "/api/compare", json={"upload_id_1": id1, "upload_id_2": id2}
+        )
+        assert response.status_code == 202
+        job_id = response.get_json()["job_id"]
+
+        # То этап выставлен самим пайплайном (тест set_stage не вызывает):
+        # статус «в обработке», ключ этапа и сообщение этапа на русском
+        deadline = time.time() + 5
+        body = client.get(f"/api/jobs/{job_id}").get_json()
+        while (
+            body["status"] == "processing"
+            and body["stage"] != "llm"
+            and time.time() < deadline
+        ):
+            time.sleep(0.01)
+            body = client.get(f"/api/jobs/{job_id}").get_json()
         assert body["status"] == "processing"
-        assert body["stage"] == "diffing"
-        assert body["stage_message"] == "Поиск различий..."
+        assert body["stage"] == "llm"
+        assert body["stage_message"] == "Анализ через LLM..."
+
+        # И задача завершается успешно, результат доступен через API
+        while body["status"] != "done" and time.time() < deadline:
+            time.sleep(0.01)
+            body = client.get(f"/api/jobs/{job_id}").get_json()
+        assert body["status"] == "done"
+        assert body.get("error") is None
+        assert body["result"]["rows"]
 
     def test_unknown_job_returns_404(self, make_app):
         client = make_app(MockChat([])).test_client()
@@ -410,6 +458,28 @@ class TestJobStatus:
         assert segment_types <= {"same", "del", "add", "del-mark", "add-mark"}
         assert changes <= {"changed", "removed", "added", None}
 
+    def test_changed_block_without_inline_diff_has_no_segments(
+        self, make_app, monkeypatch
+    ):
+        # Дано пословный diff недоступен (патологически длинный блок —
+        # эмулируем нулевым порогом MAX_INLINE_TOKENS)
+        monkeypatch.setattr("app.services.diffing.MAX_INLINE_TOKENS", 0)
+        app = make_app(MockChat(['{"label": "changed"}']))
+        client = app.test_client()
+        id1 = upload_docx(client, "v1.docx", ["А", "ББ текст первый"])
+        id2 = upload_docx(client, "v2.docx", ["А", "ББ текст второй"])
+        job_id = client.post(
+            "/api/compare", json={"upload_id_1": id1, "upload_id_2": id2}
+        ).get_json()["job_id"]
+
+        # То изменённый блок помечен changed, но пословных сегментов нет —
+        # клиент подсвечивает фон блока (красный слева, зелёный справа)
+        rows = client.get(f"/api/jobs/{job_id}").get_json()["result"]["rows"]
+        assert rows[1]["left"]["change"] == "changed"
+        assert rows[1]["right"]["change"] == "changed"
+        assert "segments" not in rows[1]["left"]
+        assert "segments" not in rows[1]["right"]
+
     def test_failed_job_returns_error(self, make_app):
         # Дано файл с расширением .docx, но битым содержимым
         app = make_app(MockChat([]))
@@ -446,18 +516,35 @@ class TestJobStatus:
         assert body["result"]["semantic"] is False
         assert body["result"]["rows"][1]["left"]["change"] == "changed"
 
-    def test_llm_stage_during_classification(self, make_app):
-        # Дано задача запущена; во время вызова LLM этап должен быть «Анализ через LLM...»
-        observed = {}
+    def test_llm_stage_during_classification(self, make_app, monkeypatch):
+        # Дано задача запущена; этапы фиксируются хуками в момент вызова
+        # соответствующего шага пайплайна
+        observed = []
 
-        def on_invoke():
+        def note_stage():
             job = next(iter(jobs._JOBS.values()))
-            observed["stage"] = job["stage_message"]
+            if not observed or observed[-1] != job["stage"]:
+                observed.append(job["stage"])
 
-        app = make_app(MockChat(['{"label": "changed"}'], on_invoke=on_invoke))
+        real_convert = jobs.convert_to_markdown
+        real_find_diffs = jobs.find_diffs
+
+        def spy_convert(path):
+            note_stage()
+            return real_convert(path)
+
+        def spy_find_diffs(blocks1, blocks2):
+            note_stage()
+            return real_find_diffs(blocks1, blocks2)
+
+        monkeypatch.setattr(jobs, "convert_to_markdown", spy_convert)
+        monkeypatch.setattr(jobs, "find_diffs", spy_find_diffs)
+
+        app = make_app(MockChat(['{"label": "changed"}'], on_invoke=note_stage))
         client = app.test_client()
         id1 = upload_docx(client, "v1.docx", ["А"])
         id2 = upload_docx(client, "v2.docx", ["Б"])
         client.post("/api/compare", json={"upload_id_1": id1, "upload_id_2": id2})
 
-        assert observed["stage"] == "Анализ через LLM..."
+        # То этапы выставляются все и именно в этом порядке
+        assert observed == ["converting", "diffing", "llm"]

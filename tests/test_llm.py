@@ -14,9 +14,11 @@ class MockChat:
     def __init__(self, responses):
         self.responses = list(responses)
         self.calls = 0
+        self.messages = None
 
     def invoke(self, messages):
         self.calls += 1
+        self.messages = messages
         item = self.responses.pop(0)
         if isinstance(item, Exception):
             raise item
@@ -59,6 +61,23 @@ class TestClassifyFragment:
         # То отправлено ровно два запроса
         assert chat.calls == 2
         assert result == {"label": "changed", "semantic": True}
+
+    def test_no_retry_on_valid_response(self):
+        # Дано корректный ответ с первой попытки
+        chat = MockChat(['{"label": "changed"}'])
+        result = classify_fragment(make_fragment(), chat)
+        # То отправлен ровно один запрос, без лишних повторных
+        assert chat.calls == 1
+        assert result == {"label": "changed", "semantic": True}
+
+    def test_system_prompt_is_russian(self):
+        # Когда фрагмент классифицируется
+        chat = MockChat(['{"label": "changed"}'])
+        classify_fragment(make_fragment(), chat)
+        # То первым отправлен системный промпт на русском
+        system = chat.messages[0]
+        assert system.type == "system"
+        assert "классификатор изменений" in system.content
 
     def test_label_outside_allowed_set_is_invalid(self):
         chat = MockChat(['{"label": "moved"}', '{"label": "added"}'])
@@ -123,6 +142,10 @@ class TestCreateChatModel:
         chat = create_chat_model(self.CONFIG)
         assert chat.extra_body is None
         assert chat.model_name == "qwen3-14b"
+
+    def test_base_url_from_config(self):
+        chat = create_chat_model(self.CONFIG)
+        assert str(chat.openai_api_base).rstrip("/") == self.CONFIG["LLM_BASE_URL"]
 
     def test_with_extra_body(self):
         config = {

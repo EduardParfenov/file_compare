@@ -40,6 +40,30 @@ def test_heading_levels(tmp_path):
     assert markdown.startswith("## Раздел")
 
 
+@pytest.mark.parametrize("level", [3, 4, 5, 6])
+def test_heading_levels_3_to_6(tmp_path, level):
+    # Дано .docx с заголовком уровня 3–6
+    path = make_docx(
+        tmp_path / "doc.docx",
+        lambda doc: doc.add_heading("Раздел", level=level),
+    )
+    # То уровень Markdown-заголовка совпадает
+    markdown = convert_docx(path)
+    assert markdown == "#" * level + " Раздел"
+
+
+@pytest.mark.parametrize("level", [7, 9])
+def test_heading_level_clamped_to_6(tmp_path, level):
+    # Дано .docx с заголовком уровня выше 6
+    path = make_docx(
+        tmp_path / "doc.docx",
+        lambda doc: doc.add_heading("Раздел", level=level),
+    )
+    # То уровень ограничен сверху шестым
+    markdown = convert_docx(path)
+    assert markdown == "###### Раздел"
+
+
 def test_table(tmp_path):
     # Дано .docx с таблицей 2x2
     def build(doc):
@@ -56,7 +80,9 @@ def test_table(tmp_path):
     lines = markdown.splitlines()
     assert "| A | B |" in lines
     assert "| 1 | 2 |" in lines
-    assert any(set(line) <= set("|- ") for line in lines), "нет строки-разделителя"
+    # И разделительная строка ровно одна и стоит сразу после шапки
+    assert lines[1] == "| --- | --- |"
+    assert sum(1 for line in lines if set(line) <= set("|- ")) == 1
 
 
 def test_merged_cells_flattened(tmp_path):

@@ -295,3 +295,10 @@ class TestIsTableSeparator:
 
     def test_plain_text_is_not_separator(self):
         assert is_table_separator("обычный текст") is False
+
+    def test_only_pipes_is_not_separator(self):
+        # Строка из одних `|` без дефисов разделителем не считается
+        assert is_table_separator("|||") is False
+
+    def test_pipes_with_spaces_is_not_separator(self):
+        assert is_table_separator("| | |") is False

@@ -1,6 +1,6 @@
 # Рецензия: спецификации, тесты, код
 
-Дата: 2026-09-08. Проверено: 80 тестов проходят (актуализировано 2026-09-10, change `fix-diff-colors-and-table-fallback`).
+Дата: 2026-09-08. Проверено: 95 тестов проходят (актуализировано 2026-09-10, changes `fix-diff-colors-and-table-fallback`, `harden-tests`).
 
 ## 1. Требования, для которых нет проверок
 
@@ -12,20 +12,20 @@
 - **diff-viewer / «Отображение side-by-side»**: требования к высотам (парные блоки — высота большей стороны; пустое место — высота удалённого/добавленного блока; таблицы обеих панелей — одинаковая высота; `equalizeHeights`).
 - **diff-viewer / «Цветовая подсветка»**: цвета фонов, метки-полосы в UI, запрет жёлтого в подсветке различий, «подкладка короткой стороны без цветного фона», желто-зелено-серая палитра — ничем не проверяются (даже косвенно).
 - **diff-viewer / «Индикация деградированного режима»**: серверный флаг `semantic` проверен, само отображение уведомления — нет.
-- **diff-viewer / fallback пословного diff для обычных блоков**: сценарий «патологически длинный блок → красный/зелёный фон без пословного diff» не проверен (fallback табличных ячеек при `inline_diff → None` покрыт тестом `test_table_cell_fallback_highlights_whole_cell`).
-- **comparison-jobs / асинхронность**: «обработка MUST выполняться асинхронно» не проверяется — все тесты работают через `JOBS_SYNCHRONOUS=True`; поточный режим `start_job` не выполняется никогда.
-- **comparison-jobs / порядок этапов**: последовательность converting → diffing → llm проверена только точечно (stage во время LLM-вызова); то, что этапы выставляются все и именно в этом порядке, не проверено.
-- **llm-classification**: системный промпт на русском и его отправка (мок не инспектирует сообщения); `base_url` из `LLM_BASE_URL` (проверяются только `model_name` и `extra_body`).
-- **markdown-conversion**: заголовки уровней 3–6 и ограничение уровня сверху (`max(1, min(6, ...))`).
-- **file-upload**: уникальность имени сохраняемого файла (спека требует «уникальное имя», проверяется только факт сохранения).
+- ~~**diff-viewer / fallback пословного diff**~~ — **исправлено** (changes `fix-diff-colors-and-table-fallback`, `harden-tests`): путь `inline_diff → None` покрыт для табличных ячеек (`test_table_cell_fallback_highlights_whole_cell`) и для обычных блоков (`test_changed_block_without_inline_diff_has_no_segments`).
+- ~~**comparison-jobs / асинхронность**~~ — **исправлено** (change `harden-tests`): потоковый путь `start_job` покрыт тестом `test_threaded_job_pipeline_sets_stages_and_completes` (processing → done, этапы от пайплайна, результат через API).
+- ~~**comparison-jobs / порядок этапов**~~ — **исправлено** (change `harden-tests`): последовательность converting → diffing → llm проверена целиком в `test_llm_stage_during_classification`.
+- ~~**llm-classification**: системный промпт и `base_url`~~ — **исправлено** (change `harden-tests`): `test_system_prompt_is_russian` (промпт на русском, мок инспектирует сообщения), `test_base_url_from_config` (`base_url` из `LLM_BASE_URL`).
+- ~~**markdown-conversion**: заголовки уровней 3–6 и клампинг~~ — **исправлено** (change `harden-tests`): `test_heading_levels_3_to_6`, `test_heading_level_clamped_to_6`.
+- ~~**file-upload**: уникальность имени сохраняемого файла~~ — **исправлено** (change `harden-tests`): `test_upload_same_name_twice_saves_both`.
 
 ## 2. Тесты, которые пройдут при неверной реализации
 
-- **`test_processing_status_with_stage_message`** — сам выставляет состояние через `jobs.set_stage(job_id, "diffing")` и проверяет его эхо. Пройдёт при пайплайне, который никогда не выставляет этапы.
-- **`test_unknown_upload_id_returns_404`** — оба идентификатора несуществующие. Реализация, проверяющая только первый `upload_id`, пройдёт; случай «первый валиден, второй нет» не проверен нигде.
-- **`test_llm_stage_during_classification`** — пройдёт, если этапы converting/diffing вообще не выставляются (проверяется только момент LLM).
-- **`test_table` (docx)** — проверка разделителя `any(set(line) <= set("|- ") ...)`: строка из одних `|` (без `---`) удовлетворяет условию, т.е. некорректный разделитель тест не отловит; количество и позиция разделителя не проверяются.
-- **`test_retry_after_invalid_response`** фиксирует `calls == 2`, но нет теста «корректный ответ → ровно 1 вызов»: реализация, делающая лишний повторный запрос после успеха, пройдёт все тесты ретраев.
+- ~~**`test_processing_status_with_stage_message`**~~ — **исправлено** (change `harden-tests`): заменён потоковым тестом `test_threaded_job_pipeline_sets_stages_and_completes`; этапы выставляет пайплайн (mutation-проверка: пайплайн без `set_stage` валит тест).
+- ~~**`test_unknown_upload_id_returns_404`**~~ — **исправлено** (change `harden-tests`): параметризован смешанными случаями «первый валиден, второй нет» и наоборот (mutation-проверка: проверка только первого id валит тест).
+- ~~**`test_llm_stage_during_classification`**~~ — **исправлено** (change `harden-tests`): проверяется полная последовательность этапов converting → diffing → llm.
+- ~~**`test_table` (docx)**~~ — **исправлено** (change `harden-tests`): разделитель проверяется точно (`lines[1] == "| --- | --- |"`, ровно одна разделительная строка); негативные случаи `is_table_separator("|||")` и `"| | |"` добавлены в `test_diffing.py` (mutation-проверка: конвертер без разделителя валит тест).
+- ~~**`test_retry_after_invalid_response`** (нет теста «ровно 1 вызов»)~~ — **исправлено** (change `harden-tests`): добавлен `test_no_retry_on_valid_response` (mutation-проверка: лишний повторный запрос валит тест).
 - **`test_deterministic`** — `convert_docx(path) == convert_docx(path)` пройдёт при любой чистой функции; детерминированность как требование спеки им практически не подтверждается.
 - ~~Комментарии, противоречащие спецификации~~ — **исправлено** (change `fix-diff-colors-and-table-fallback`): комментарии в `tests/test_jobs.py` и `app/static/app.js` теперь описывают двухцветную модель (красный — удалённое/старая сторона, зелёный — добавленное/новая сторона), жёлтый в подсветке различий не упоминается.
 

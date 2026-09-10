@@ -40,6 +40,25 @@ def test_upload_docx_success(client, app):
     assert saved[0].endswith(".docx")
 
 
+def test_upload_same_name_twice_saves_both(client, app):
+    # Когда клиент дважды загружает файл с одним и тем же именем
+    first = upload(client, "report.docx", data=b"v1").get_json()
+    second = upload(client, "report.docx", data=b"v2").get_json()
+    # То оба файла сохранены под уникальными именами и доступны в реестре
+    assert first["upload_id"] != second["upload_id"]
+    import os
+
+    from app.services import uploads
+
+    saved = os.listdir(app.config["UPLOAD_DIR"])
+    assert len(saved) == 2
+    path1 = uploads.get_upload_path(first["upload_id"])
+    path2 = uploads.get_upload_path(second["upload_id"])
+    assert path1 != path2
+    assert open(path1, "rb").read() == b"v1"
+    assert open(path2, "rb").read() == b"v2"
+
+
 def test_upload_rejects_unsupported_extension(client, app):
     # Когда клиент загружает файл не из ALLOWED_EXTENSIONS
     response = upload(client, "notes.txt")
