@@ -1,0 +1,6 @@
+# Development and CI dependencies (pinned to the local .venv versions).
+# Installed together with requirements.txt:
+#   pip install -r requirements.txt -r requirements-dev.txt
+pytest==9.1.1
+ruff==0.16.7
+pip-audit==2.10.1

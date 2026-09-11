@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-09-02
+goal: "Веб-страница для ИИ-агента сравнения двух версий документов: загрузка
+  .docx, конвертация в Markdown, алгоритмический + семантический diff,
+  side-by-side diff viewer"
