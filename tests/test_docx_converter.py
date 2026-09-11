@@ -137,7 +137,5 @@ def test_corrupted_file(tmp_path):
 
 
 def test_deterministic(tmp_path):
-    path = make_docx(
-        tmp_path / "doc.docx", lambda doc: doc.add_paragraph("Текст")
-    )
+    path = make_docx(tmp_path / "doc.docx", lambda doc: doc.add_paragraph("Текст"))
     assert convert_docx(path) == convert_docx(path)

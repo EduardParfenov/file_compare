@@ -19,7 +19,7 @@ def _parse_llm_extra_body() -> dict | None:
     except json.JSONDecodeError as exc:
         raise ValueError(f"LLM_EXTRA_BODY содержит невалидный JSON: {exc}") from exc
     if not isinstance(data, dict):
-        raise ValueError("LLM_EXTRA_BODY должен быть JSON-объектом")
+        raise TypeError("LLM_EXTRA_BODY должен быть JSON-объектом")
     return data
 
 
@@ -30,7 +30,9 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.config.from_mapping(
         SECRET_KEY=os.environ.get("SECRET_KEY", "dev"),
         UPLOAD_DIR=upload_dir,
-        MAX_CONTENT_LENGTH=int(os.environ.get("MAX_CONTENT_LENGTH", 16 * 1024 * 1024)),
+        MAX_CONTENT_LENGTH=int(
+            os.environ.get("MAX_CONTENT_LENGTH", str(16 * 1024 * 1024))
+        ),
         ALLOWED_EXTENSIONS={
             ext.strip()
             for ext in os.environ.get("ALLOWED_EXTENSIONS", ".docx").split(",")

@@ -53,7 +53,9 @@ def clear_jobs() -> None:
     _JOBS.clear()
 
 
-def start_job(job_id: str, path1: str, path2: str, chat, synchronous: bool = False) -> None:
+def start_job(
+    job_id: str, path1: str, path2: str, chat, synchronous: bool = False
+) -> None:
     """Запускает пайплайн сравнения (в потоке либо синхронно для тестов)."""
     if synchronous:
         run_pipeline(job_id, path1, path2, chat)

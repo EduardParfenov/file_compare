@@ -86,7 +86,7 @@ def classify_fragment(fragment: dict, chat) -> dict:
     for _attempt in range(2):  # основная попытка + один ретрай
         try:
             response = chat.invoke(messages)
-        except Exception:
+        except Exception:  # noqa: BLE001 — любой сбой chat-модели → деградация на фолбэк
             break  # сбой сети/API — ретрай бессмысленен, сразу деградация
         label = _extract_label(_content_to_text(getattr(response, "content", "")))
         if label:

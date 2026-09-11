@@ -22,5 +22,7 @@ def convert_to_markdown(path: str) -> str:
     ext = os.path.splitext(path)[1].lower()
     converter = CONVERTERS.get(ext)
     if converter is None:
-        raise UnsupportedFormatError(f"Формат {ext or 'без расширения'} не поддерживается")
+        raise UnsupportedFormatError(
+            f"Формат {ext or 'без расширения'} не поддерживается"
+        )
     return converter(path)

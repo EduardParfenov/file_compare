@@ -155,7 +155,10 @@ def _match_pairs(
     pairs = []
     i, j = n, m
     while i > 0 and j > 0:
-        if ratios[i - 1][j - 1] > 0 and dp[i][j] == dp[i - 1][j - 1] + ratios[i - 1][j - 1]:
+        if (
+            ratios[i - 1][j - 1] > 0
+            and dp[i][j] == dp[i - 1][j - 1] + ratios[i - 1][j - 1]
+        ):
             pairs.append((i - 1, j - 1))
             i -= 1
             j -= 1
@@ -231,9 +234,7 @@ def _append_segment(segments: list[dict], text: str, seg_type: str) -> None:
         segments.append({"text": text, "type": seg_type})
 
 
-def inline_diff(
-    old_text: str, new_text: str
-) -> tuple[list[dict], list[dict]] | None:
+def inline_diff(old_text: str, new_text: str) -> tuple[list[dict], list[dict]] | None:
     """Пословный diff внутри изменённой пары блоков.
 
     Возвращает (left_segments, right_segments) — списки {"text", "type"},

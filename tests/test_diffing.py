@@ -14,8 +14,7 @@ class TestSplitBlocks:
     def test_mixed_document(self):
         # Дано Markdown из заголовка, двух абзацев и таблицы из двух строк
         markdown = (
-            "# Заголовок\n\nАбзац 1\n\nАбзац 2\n\n"
-            "| A | B |\n| --- | --- |\n| 1 | 2 |"
+            "# Заголовок\n\nАбзац 1\n\nАбзац 2\n\n| A | B |\n| --- | --- |\n| 1 | 2 |"
         )
         # Когда выполняется разбиение
         blocks = split_blocks(markdown)
@@ -113,7 +112,9 @@ class TestRefineFragments:
         assert [f["opcode"] for f in frags] == ["replace", "delete", "insert"]
         assert frags[0]["old_blocks"] == ["Пункт второй: срок действия один год."]
         assert frags[0]["new_blocks"] == ["Пункт второй: срок действия два года."]
-        assert frags[1]["old_blocks"] == ["Пункт третий: ответственность сторон по договору."]
+        assert frags[1]["old_blocks"] == [
+            "Пункт третий: ответственность сторон по договору."
+        ]
         assert frags[1]["new_blocks"] == []
         assert frags[2]["old_blocks"] == []
         assert frags[2]["new_blocks"] == ["Совершенно новый пункт про форс-мажор."]

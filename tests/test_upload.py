@@ -1,6 +1,7 @@
 """Тесты API загрузки файлов (spec: file-upload)."""
 
 import io
+from pathlib import Path
 
 import pytest
 
@@ -55,8 +56,8 @@ def test_upload_same_name_twice_saves_both(client, app):
     path1 = uploads.get_upload_path(first["upload_id"])
     path2 = uploads.get_upload_path(second["upload_id"])
     assert path1 != path2
-    assert open(path1, "rb").read() == b"v1"
-    assert open(path2, "rb").read() == b"v2"
+    assert Path(path1).read_bytes() == b"v1"
+    assert Path(path2).read_bytes() == b"v2"
 
 
 def test_upload_rejects_unsupported_extension(client, app):

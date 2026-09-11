@@ -4,6 +4,7 @@ LLM заменяется моком: тесты детерминированы �
 """
 
 from types import SimpleNamespace
+from typing import ClassVar
 
 from app.services.llm import classify_fragment, classify_fragments, create_chat_model
 
@@ -131,7 +132,7 @@ class TestClassifyFragments:
 
 
 class TestCreateChatModel:
-    CONFIG = {
+    CONFIG: ClassVar[dict] = {
         "LLM_BASE_URL": "http://localhost:1/v1",
         "LLM_API_KEY": "key",
         "LLM_MODEL": "qwen3-14b",

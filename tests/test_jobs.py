@@ -347,8 +347,12 @@ class TestJobStatus:
         # Дано документы с таблицей: изменена одна ячейка
         app = make_app(MockChat(['{"label": "changed"}']))
         client = app.test_client()
-        id1 = upload_table_docx(client, "v1.docx", [["Товар", "Цена"], ["Яблоки", "100"]])
-        id2 = upload_table_docx(client, "v2.docx", [["Товар", "Цена"], ["Яблоки", "150"]])
+        id1 = upload_table_docx(
+            client, "v1.docx", [["Товар", "Цена"], ["Яблоки", "100"]]
+        )
+        id2 = upload_table_docx(
+            client, "v2.docx", [["Товар", "Цена"], ["Яблоки", "150"]]
+        )
         job_id = client.post(
             "/api/compare", json={"upload_id_1": id1, "upload_id_2": id2}
         ).get_json()["job_id"]
@@ -373,9 +377,7 @@ class TestJobStatus:
 
     def test_table_with_different_column_counts(self, make_app):
         # Дано в файле 2 у таблицы добавилась колонка
-        app = make_app(
-            MockChat(['{"label": "changed"}', '{"label": "changed"}'])
-        )
+        app = make_app(MockChat(['{"label": "changed"}', '{"label": "changed"}']))
         client = app.test_client()
         id1 = upload_table_docx(client, "v1.docx", [["A", "B"], ["1", "2"]])
         id2 = upload_table_docx(client, "v2.docx", [["A", "B", "C"], ["1", "2", "3"]])
@@ -388,13 +390,17 @@ class TestJobStatus:
         rows = body["result"]["rows"]
         # Строка данных: правая сторона имеет 3 ячейки, левая — 2,
         # пословный diff по ячейкам выровнен (новая колонка — «добавлено»)
-        data_row = next(r for r in rows if r["left"] and r["left"].get("cells") == ["1", "2"])
+        data_row = next(
+            r for r in rows if r["left"] and r["left"].get("cells") == ["1", "2"]
+        )
         assert data_row["right"]["cells"] == ["1", "2", "3"]
         assert len(data_row["left"]["cell_segments"]) == 3
         assert len(data_row["right"]["cell_segments"]) == 3
         assert data_row["right"]["cell_segments"][2] == [{"text": "3", "type": "add"}]
         # На месте добавленной ячейки в левой стороне — пустой маркер
-        assert data_row["left"]["cell_segments"][2] == [{"text": "", "type": "add-mark"}]
+        assert data_row["left"]["cell_segments"][2] == [
+            {"text": "", "type": "add-mark"}
+        ]
 
     def test_table_cell_fallback_highlights_whole_cell(self, make_app, monkeypatch):
         # Дано пословный diff недоступен для изменённой ячейки (inline_diff → None)
@@ -408,8 +414,12 @@ class TestJobStatus:
         monkeypatch.setattr(jobs, "inline_diff", fake_inline_diff)
         app = make_app(MockChat(['{"label": "changed"}']))
         client = app.test_client()
-        id1 = upload_table_docx(client, "v1.docx", [["Товар", "Цена"], ["Яблоки", "100"]])
-        id2 = upload_table_docx(client, "v2.docx", [["Товар", "Цена"], ["Яблоки", "150"]])
+        id1 = upload_table_docx(
+            client, "v1.docx", [["Товар", "Цена"], ["Яблоки", "100"]]
+        )
+        id2 = upload_table_docx(
+            client, "v2.docx", [["Товар", "Цена"], ["Яблоки", "150"]]
+        )
         job_id = client.post(
             "/api/compare", json={"upload_id_1": id1, "upload_id_2": id2}
         ).get_json()["job_id"]
