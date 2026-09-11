@@ -9,7 +9,7 @@ bp = Blueprint("main", __name__)
 
 @bp.get("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", version=current_app.config["APP_VERSION"])
 
 
 @bp.get("/health")

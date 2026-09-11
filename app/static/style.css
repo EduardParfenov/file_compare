@@ -341,3 +341,11 @@ p {
     background: var(--green-light);
     border-bottom: 2px solid var(--green);
 }
+
+/* Подвал страницы с версией приложения */
+.page-footer {
+    margin-top: 24px;
+    text-align: center;
+    font-size: 12px;
+    color: #888;
+}

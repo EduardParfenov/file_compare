@@ -25,6 +25,7 @@
       static/           app.js, style.css
     tests/              тесты pytest
     openspec/           спецификации и change-предложения (specs/, changes/)
+    VERSION             версия проекта (semver, единственный источник)
     uploads/            каталог загрузок (не коммитится, путь из UPLOAD_DIR)
     input/              рабочие заметки — НЕ читать (см. ниже)
 
@@ -66,7 +67,7 @@ pytest                 # все тесты; LLM замокана
   `openspec/changes/` (см. `openspec/config.yaml`, схема spec-driven).
 - Каждый `proposal.md` обязан содержать строку «уровень: несовместимое
   поведение» или «уровень: исправление» — при архивации версия проекта
-  повышается соответственно (major/patch).
+  в файле `VERSION` повышается соответственно (major/patch).
 - Проверки: `openspec validate <change>`, `openspec status --change
   <change>`.
 - Действующие спеки — `openspec/specs/`; архив — `openspec/changes/archive/`.

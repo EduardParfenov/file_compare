@@ -2,11 +2,21 @@
 
 import json
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from flask import Flask
 
 load_dotenv()
+
+
+def _read_version() -> str:
+    """Версия проекта из файла VERSION в корне; запасное значение при отсутствии."""
+    version_file = Path(__file__).resolve().parent.parent / "VERSION"
+    try:
+        return version_file.read_text(encoding="utf-8").strip() or "0.0.0-dev"
+    except OSError:
+        return "0.0.0-dev"
 
 
 def _parse_llm_extra_body() -> dict | None:
@@ -42,6 +52,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         LLM_API_KEY=os.environ.get("LLM_API_KEY", ""),
         LLM_MODEL=os.environ.get("LLM_MODEL", ""),
         LLM_EXTRA_BODY=_parse_llm_extra_body(),
+        APP_VERSION=_read_version(),
     )
 
     if test_config:
