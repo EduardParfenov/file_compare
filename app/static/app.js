@@ -178,7 +178,124 @@ function appendSegments(el, segments) {
     }
 }
 
-function renderBlock(block, placeholderKind) {
+// Режем текстовые узлы root по глобальным смещениям points
+// (отсортированы). Возвращает куски {node, start, end} в порядке текста.
+function splitTextNodesAt(root, points) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const textNodes = [];
+    let n;
+    while ((n = walker.nextNode())) textNodes.push(n);
+    const pieces = [];
+    let offset = 0;
+    for (const textNode of textNodes) {
+        if (!textNode.data.length) continue;
+        let node = textNode;
+        let nodeStart = offset;
+        const nodeEnd = offset + textNode.data.length;
+        for (const cut of points) {
+            if (cut <= nodeStart || cut >= nodeEnd) continue;
+            const rest = node.splitText(cut - nodeStart);
+            pieces.push({ node, start: nodeStart, end: cut });
+            node = rest;
+            nodeStart = cut;
+        }
+        pieces.push({ node, start: nodeStart, end: nodeEnd });
+        offset = nodeEnd;
+    }
+    return pieces;
+}
+
+// Вплетает пословный diff в текстовые узлы HTML: сегменты del/add
+// оборачиваются в span.seg-*, пустые метки del-mark/add-mark вставляются
+// в свою позицию. Разметка блока не разрывается и не дублируется.
+// Предусловие: root.textContent === конкатенация текстов сегментов.
+function weaveSegments(root, segments) {
+    const intervals = []; // {start, end, type} — подсвечиваемые диапазоны
+    const marks = []; // {pos, type} — пустые метки мест удалений/добавлений
+    let pos = 0;
+    for (const seg of segments) {
+        if (seg.type === "del" || seg.type === "add") {
+            intervals.push({ start: pos, end: pos + seg.text.length, type: seg.type });
+            pos += seg.text.length;
+        } else if (seg.type === "same") {
+            pos += seg.text.length;
+        } else {
+            marks.push({ pos, type: seg.type });
+        }
+    }
+    const points = new Set();
+    intervals.forEach((i) => {
+        points.add(i.start);
+        points.add(i.end);
+    });
+    marks.forEach((m) => points.add(m.pos));
+    const pieces = splitTextNodesAt(root, [...points].sort((a, b) => a - b));
+
+    for (const piece of pieces) {
+        const iv = intervals.find((i) => i.start <= piece.start && piece.end <= i.end);
+        if (!iv) continue;
+        const span = document.createElement("span");
+        span.className = `seg-${iv.type}`;
+        piece.node.parentNode.replaceChild(span, piece.node);
+        span.appendChild(piece.node);
+    }
+    for (const m of marks) {
+        const span = document.createElement("span");
+        span.className = `seg-${m.type}`;
+        const piece = pieces.find((p) => p.start === m.pos);
+        if (piece) {
+            piece.node.parentNode.insertBefore(span, piece.node);
+        } else {
+            root.appendChild(span); // метка в самом конце блока
+        }
+    }
+}
+
+// Изображения блока: data-URI из конвертации; images_changed — рамка
+// по стороне (красная слева/файл 1, зелёная справа/файл 2)
+function appendImages(container, block, side) {
+    for (const uri of block.images || []) {
+        const img = document.createElement("img");
+        img.src = uri;
+        img.className = "block-image";
+        if (block.images_changed) img.classList.add(`image-changed-${side}`);
+        container.appendChild(img);
+    }
+}
+
+// Содержимое блока: HTML из конвертации с вплетённым пословным diff
+// либо plain text (блок без html или расхождение html и текста)
+function renderBlockContent(div, block) {
+    if (block.html) {
+        // HTML генерируется только нашим конвертером: текст документа
+        // экранирован на этапе конвертации, набор тегов фиксирован,
+        // поэтому innerHTML здесь безопасен
+        div.innerHTML = block.html;
+        if (block.segments) {
+            if (div.textContent === block.text) {
+                weaveSegments(div, block.segments);
+            } else {
+                // HTML не соответствует тексту блока: fallback на plain text
+                div.textContent = "";
+                appendSegments(div, block.segments);
+            }
+        } else if (block.change) {
+            div.classList.add(`change-${block.change}`);
+        }
+        return;
+    }
+    // Изменённый блок с пословным diff: подсвечиваем только различающиеся
+    // слова по двухцветной модели (удалено/старая версия — красный,
+    // добавлено/новая версия — зелёный), фон всего блока не заливаем
+    if (block.segments) {
+        appendSegments(div, block.segments);
+        return;
+    }
+    div.textContent = block.text;
+    if (block.change) div.classList.add(`change-${block.change}`);
+}
+
+function renderBlock(block, placeholderKind, side) {
     const div = document.createElement("div");
     div.className = "diff-block";
     if (block === null) {
@@ -187,15 +304,8 @@ function renderBlock(block, placeholderKind) {
         div.innerHTML = "&nbsp;";
         return div;
     }
-    // Изменённый блок с пословным diff: подсвечиваем только различающиеся
-    // слова по двухцветной модели (удалено/старая версия — красный,
-    // добавлено/новая версия — зелёный), фон всего блока не заливаем
-    if (block.segments) {
-        appendSegments(div, block.segments);
-        return div;
-    }
-    div.textContent = block.text;
-    if (block.change) div.classList.add(`change-${block.change}`);
+    renderBlockContent(div, block);
+    appendImages(div, block, side);
     return div;
 }
 
@@ -207,10 +317,28 @@ function isTableGroupRow(row) {
     return ok(row.left) && ok(row.right) && (isTable(row.left) || isTable(row.right));
 }
 
+// Пословный diff ячеек вплетается в <td> по индексу; при расхождении
+// содержимого ячейки с текстом — fallback на plain text сегменты
+function weaveTableSegments(tr, block) {
+    if (!block.cell_segments) return;
+    const tds = tr.children;
+    for (let c = 0; c < block.cell_segments.length && c < tds.length; c++) {
+        const segs = block.cell_segments[c];
+        if (!segs || segs.length === 0) continue;
+        const td = tds[c];
+        if (td.textContent === (block.cells[c] || "")) {
+            weaveSegments(td, segs);
+        } else {
+            td.textContent = "";
+            appendSegments(td, segs);
+        }
+    }
+}
+
 // Строки таблицы приходят отдельными блоками — собираем в одну
 // HTML-таблицу. Служебная строка-разделитель (sep) пропускается.
 // Разное число колонок дополняется пустыми ячейками
-function renderTableSide(blocks, placeholderKind) {
+function renderTableSide(blocks, placeholderKind, side) {
     const div = document.createElement("div");
     div.className = "diff-block diff-table";
     const dataBlocks = blocks.filter((b) => b !== null && !b.sep);
@@ -220,7 +348,11 @@ function renderTableSide(blocks, placeholderKind) {
         div.innerHTML = "&nbsp;";
         return div;
     }
-    const cols = Math.max(...dataBlocks.map((b) => b.cells.length));
+    // Число колонок: по ячейкам и по сегментам (сегменты включают ячейки
+    // другой стороны — например метку добавленной колонки)
+    const cols = Math.max(
+        ...dataBlocks.map((b) => Math.max(b.cells.length, (b.cell_segments || []).length))
+    );
     const table = document.createElement("table");
     dataBlocks.forEach((block) => {
         const tr = document.createElement("tr");
@@ -228,18 +360,28 @@ function renderTableSide(blocks, placeholderKind) {
         if (block.change && !block.cell_segments) {
             tr.classList.add(`change-${block.change}`);
         }
-        for (let c = 0; c < cols; c++) {
-            const cellEl = document.createElement("td");
-            if (block.cell_segments && block.cell_segments[c]) {
-                appendSegments(cellEl, block.cell_segments[c]);
-            } else if (c < block.cells.length) {
-                cellEl.textContent = block.cells[c];
+        if (block.html) {
+            // Converter-generated фрагмент <td>…</td>… (текст экранирован)
+            tr.innerHTML = block.html;
+            while (tr.children.length < cols) {
+                tr.appendChild(document.createElement("td"));
             }
-            tr.appendChild(cellEl);
+            weaveTableSegments(tr, block);
+        } else {
+            for (let c = 0; c < cols; c++) {
+                const cellEl = document.createElement("td");
+                if (block.cell_segments && block.cell_segments[c]) {
+                    appendSegments(cellEl, block.cell_segments[c]);
+                } else if (c < block.cells.length) {
+                    cellEl.textContent = block.cells[c];
+                }
+                tr.appendChild(cellEl);
+            }
         }
         table.appendChild(tr);
     });
     div.appendChild(table);
+    for (const block of dataBlocks) appendImages(div, block, side);
     return div;
 }
 
@@ -293,18 +435,18 @@ function renderResult(result) {
             const leftBlocks = group.map((row) => row.left);
             const rightBlocks = group.map((row) => row.right);
             els.contentLeft.appendChild(
-                renderTableSide(leftBlocks, tablePlaceholderKind(rightBlocks))
+                renderTableSide(leftBlocks, tablePlaceholderKind(rightBlocks), "left")
             );
             els.contentRight.appendChild(
-                renderTableSide(rightBlocks, tablePlaceholderKind(leftBlocks))
+                renderTableSide(rightBlocks, tablePlaceholderKind(leftBlocks), "right")
             );
             i = j;
         } else {
             els.contentLeft.appendChild(
-                renderBlock(rows[i].left, placeholderKind(rows[i].right))
+                renderBlock(rows[i].left, placeholderKind(rows[i].right), "left")
             );
             els.contentRight.appendChild(
-                renderBlock(rows[i].right, placeholderKind(rows[i].left))
+                renderBlock(rows[i].right, placeholderKind(rows[i].left), "right")
             );
             i++;
         }
@@ -337,3 +479,13 @@ syncScroll(els.panelRight, els.panelLeft);
 window.addEventListener("resize", () => {
     if (!els.diff.hidden) equalizeHeights();
 });
+
+// После догрузки изображений высоты блоков меняются — выравниваем заново
+// (событие load не всплывает, поэтому слушатель в фазе capture)
+els.diff.addEventListener(
+    "load",
+    (event) => {
+        if (event.target.tagName === "IMG" && !els.diff.hidden) equalizeHeights();
+    },
+    true
+);

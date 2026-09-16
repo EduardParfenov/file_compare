@@ -4,15 +4,15 @@ import threading
 import uuid
 from itertools import zip_longest
 
-from app.services.conversion import convert_to_markdown
+from app.services.conversion import convert_document
 from app.services.diffing import (
     find_diffs,
     inline_diff,
     is_table_row,
     is_table_separator,
+    normalize_blocks,
     parse_table_row,
     refine_fragments,
-    split_blocks,
 )
 from app.services.llm import classify_fragments
 
@@ -54,30 +54,43 @@ def clear_jobs() -> None:
 
 
 def start_job(
-    job_id: str, path1: str, path2: str, chat, synchronous: bool = False
+    job_id: str,
+    path1: str,
+    path2: str,
+    chat,
+    max_images_bytes: int | None = None,
+    synchronous: bool = False,
 ) -> None:
     """Запускает пайплайн сравнения (в потоке либо синхронно для тестов)."""
     if synchronous:
-        run_pipeline(job_id, path1, path2, chat)
+        run_pipeline(job_id, path1, path2, chat, max_images_bytes)
     else:
         thread = threading.Thread(
-            target=run_pipeline, args=(job_id, path1, path2, chat), daemon=True
+            target=run_pipeline,
+            args=(job_id, path1, path2, chat, max_images_bytes),
+            daemon=True,
         )
         thread.start()
 
 
-def run_pipeline(job_id: str, path1: str, path2: str, chat) -> None:
+def run_pipeline(
+    job_id: str, path1: str, path2: str, chat, max_images_bytes: int | None = None
+) -> None:
     """Конвертация → diff → классификация LLM → результат. Никогда не бросает."""
     job = _JOBS[job_id]
     try:
         set_stage(job_id, "converting")
-        markdown1 = convert_to_markdown(path1)
-        markdown2 = convert_to_markdown(path2)
+        blocks1 = normalize_blocks(
+            convert_document(path1, max_images_bytes=max_images_bytes)
+        )
+        blocks2 = normalize_blocks(
+            convert_document(path2, max_images_bytes=max_images_bytes)
+        )
 
         set_stage(job_id, "diffing")
-        blocks1 = split_blocks(markdown1)
-        blocks2 = split_blocks(markdown2)
-        fragments = refine_fragments(find_diffs(blocks1, blocks2))
+        texts1 = [block["text"] for block in blocks1]
+        texts2 = [block["text"] for block in blocks2]
+        fragments = refine_fragments(find_diffs(texts1, texts2))
 
         set_stage(job_id, "llm")
         labels, semantic = classify_fragments(fragments, chat)
@@ -124,6 +137,31 @@ def _cell_fallback_segments(a: str, b: str) -> tuple[list[dict], list[dict]]:
     return left, right
 
 
+def _images_sha(block: dict) -> list[str]:
+    """Подписи изображений блока для сравнения сторон."""
+    return [img["sha1"] for img in block["images"]]
+
+
+def _row_side(block: dict, change: str | None) -> dict:
+    """Сторона строки результата: текст плюс отображение (html, images)."""
+    side = {
+        "text": block["text"],
+        "change": change,
+        "html": block["html"],
+        "images": [img["data_uri"] for img in block["images"]],
+    }
+    _enrich_table_block(side)
+    return side
+
+
+def _mark_images_changed(left: dict, right: dict, old: dict, new: dict) -> None:
+    """Помечает пару сторон, если изображения блоков различаются (текст
+    может совпадать — текстовый diff замену картинки не видит)."""
+    if _images_sha(old) != _images_sha(new):
+        left["images_changed"] = True
+        right["images_changed"] = True
+
+
 def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
     """Выровненные строки side-by-side: {left, right}, None — пустое место.
 
@@ -136,10 +174,10 @@ def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
     def emit_equal(end1: int, end2: int) -> None:
         nonlocal pos1, pos2
         for k in range(end1 - pos1):
-            left = {"text": blocks1[pos1 + k], "change": None}
-            right = {"text": blocks2[pos2 + k], "change": None}
-            _enrich_table_block(left)
-            _enrich_table_block(right)
+            old, new = blocks1[pos1 + k], blocks2[pos2 + k]
+            left = _row_side(old, None)
+            right = _row_side(new, None)
+            _mark_images_changed(left, right, old, new)
             rows.append({"left": left, "right": right})
         pos1, pos2 = end1, end2
 
@@ -150,22 +188,19 @@ def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
         new = blocks2[j1:j2]
         for k in range(max(len(old), len(new))):
             left = (
-                {"text": old[k], "change": _side_change(label["label"], "left")}
+                _row_side(old[k], _side_change(label["label"], "left"))
                 if k < len(old)
                 else None
             )
             right = (
-                {"text": new[k], "change": _side_change(label["label"], "right")}
+                _row_side(new[k], _side_change(label["label"], "right"))
                 if k < len(new)
                 else None
             )
-            if left:
-                _enrich_table_block(left)
-            if right:
-                _enrich_table_block(right)
             # Изменённая пара: пословный diff для подсветки только
             # различающихся слов (для строк таблиц — по ячейкам)
             if left and right and label["label"] == "changed":
+                _mark_images_changed(left, right, old[k], new[k])
                 if "cells" in left and "cells" in right:
                     left_segs, right_segs = [], []
                     for a, b in zip_longest(
@@ -177,7 +212,7 @@ def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
                     left["cell_segments"] = left_segs
                     right["cell_segments"] = right_segs
                 elif "sep" not in left and "sep" not in right:
-                    segments = inline_diff(old[k], new[k])
+                    segments = inline_diff(old[k]["text"], new[k]["text"])
                     if segments:
                         left["segments"], right["segments"] = segments
             rows.append({"left": left, "right": right})

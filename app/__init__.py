@@ -43,6 +43,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         MAX_CONTENT_LENGTH=int(
             os.environ.get("MAX_CONTENT_LENGTH", str(16 * 1024 * 1024))
         ),
+        MAX_IMAGES_TOTAL_BYTES=int(
+            os.environ.get("MAX_IMAGES_TOTAL_BYTES", str(10 * 1024 * 1024))
+        ),
         ALLOWED_EXTENSIONS={
             ext.strip()
             for ext in os.environ.get("ALLOWED_EXTENSIONS", ".docx").split(",")

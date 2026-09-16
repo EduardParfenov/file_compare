@@ -1,5 +1,6 @@
 """Тесты задач сравнения и пайплайна (spec: comparison-jobs)."""
 
+import base64
 import io
 import time
 from types import SimpleNamespace
@@ -207,13 +208,15 @@ class TestJobStatus:
         assert result["semantic"] is True
         rows = result["rows"]
         assert rows[0] == {
-            "left": {"text": "А", "change": None},
-            "right": {"text": "А", "change": None},
+            "left": {"text": "А", "change": None, "html": "<p>А</p>", "images": []},
+            "right": {"text": "А", "change": None, "html": "<p>А</p>", "images": []},
         }
         assert rows[1] == {
             "left": {
                 "text": "ББ текст первый",
                 "change": "changed",
+                "html": "<p>ББ текст первый</p>",
+                "images": [],
                 "segments": [
                     {"text": "ББ текст ", "type": "same"},
                     {"text": "первый", "type": "del"},
@@ -222,6 +225,8 @@ class TestJobStatus:
             "right": {
                 "text": "ББ текст второй",
                 "change": "changed",
+                "html": "<p>ББ текст второй</p>",
+                "images": [],
                 "segments": [
                     {"text": "ББ текст ", "type": "same"},
                     {"text": "второй", "type": "add"},
@@ -229,8 +234,8 @@ class TestJobStatus:
             },
         }
         assert rows[2] == {
-            "left": {"text": "В", "change": None},
-            "right": {"text": "В", "change": None},
+            "left": {"text": "В", "change": None, "html": "<p>В</p>", "images": []},
+            "right": {"text": "В", "change": None, "html": "<p>В</p>", "images": []},
         }
 
     def test_removed_block_has_placeholder_on_right(self, make_app):
@@ -244,7 +249,12 @@ class TestJobStatus:
 
         rows = client.get(f"/api/jobs/{job_id}").get_json()["result"]["rows"]
         assert rows[1] == {
-            "left": {"text": "Б", "change": "removed"},
+            "left": {
+                "text": "Б",
+                "change": "removed",
+                "html": "<p>Б</p>",
+                "images": [],
+            },
             "right": None,
         }
 
@@ -260,7 +270,12 @@ class TestJobStatus:
         rows = client.get(f"/api/jobs/{job_id}").get_json()["result"]["rows"]
         assert rows[1] == {
             "left": None,
-            "right": {"text": "Б", "change": "added"},
+            "right": {
+                "text": "Б",
+                "change": "added",
+                "html": "<p>Б</p>",
+                "images": [],
+            },
         }
 
     def test_changed_removed_added_blocks_classified_separately(self, make_app):
@@ -307,6 +322,8 @@ class TestJobStatus:
             "left": {
                 "text": "Пункт второй: срок действия один год.",
                 "change": "changed",
+                "html": "<p>Пункт второй: срок действия один год.</p>",
+                "images": [],
                 "segments": [
                     {"text": "Пункт второй: срок действия ", "type": "same"},
                     {"text": "один", "type": "del"},
@@ -318,6 +335,8 @@ class TestJobStatus:
             "right": {
                 "text": "Пункт второй: срок действия два года.",
                 "change": "changed",
+                "html": "<p>Пункт второй: срок действия два года.</p>",
+                "images": [],
                 "segments": [
                     {"text": "Пункт второй: срок действия ", "type": "same"},
                     {"text": "два", "type": "add"},
@@ -331,6 +350,8 @@ class TestJobStatus:
             "left": {
                 "text": "Пункт третий: ответственность сторон по договору.",
                 "change": "removed",
+                "html": "<p>Пункт третий: ответственность сторон по договору.</p>",
+                "images": [],
             },
             "right": None,
         }
@@ -339,6 +360,8 @@ class TestJobStatus:
             "right": {
                 "text": "Совершенно новый пункт про форс-мажор.",
                 "change": "added",
+                "html": "<p>Совершенно новый пункт про форс-мажор.</p>",
+                "images": [],
             },
         }
         assert rows[4]["left"]["change"] is None
@@ -361,16 +384,16 @@ class TestJobStatus:
         # Шапка: структурные ячейки, без изменений
         assert rows[0]["left"]["cells"] == ["Товар", "Цена"]
         assert rows[0]["left"]["change"] is None
-        # Служебная строка-разделитель помечена sep
-        assert rows[1]["left"]["sep"] is True
-        assert "cells" not in rows[1]["left"]
+        assert rows[0]["left"]["html"] == "<td>Товар</td><td>Цена</td>"
+        # Служебной строки-разделителя нет — конвертер её не эмитит
+        assert all("sep" not in side for row in rows for side in row.values() if side)
         # Изменённая строка: ячейки + пословный diff по ячейкам
-        assert rows[2]["left"]["cells"] == ["Яблоки", "100"]
-        assert rows[2]["left"]["cell_segments"] == [
+        assert rows[1]["left"]["cells"] == ["Яблоки", "100"]
+        assert rows[1]["left"]["cell_segments"] == [
             [{"text": "Яблоки", "type": "same"}],
             [{"text": "100", "type": "del"}],
         ]
-        assert rows[2]["right"]["cell_segments"] == [
+        assert rows[1]["right"]["cell_segments"] == [
             [{"text": "Яблоки", "type": "same"}],
             [{"text": "150", "type": "add"}],
         ]
@@ -427,11 +450,11 @@ class TestJobStatus:
         # То изменённая ячейка подсвечена целиком: красным в файле 1,
         # зелёным в файле 2 (двухцветная модель, общее правило fallback)
         rows = client.get(f"/api/jobs/{job_id}").get_json()["result"]["rows"]
-        assert rows[2]["left"]["cell_segments"] == [
+        assert rows[1]["left"]["cell_segments"] == [
             [{"text": "Яблоки", "type": "same"}],
             [{"text": "100", "type": "del"}],
         ]
-        assert rows[2]["right"]["cell_segments"] == [
+        assert rows[1]["right"]["cell_segments"] == [
             [{"text": "Яблоки", "type": "same"}],
             [{"text": "150", "type": "add"}],
         ]
@@ -536,18 +559,18 @@ class TestJobStatus:
             if not observed or observed[-1] != job["stage"]:
                 observed.append(job["stage"])
 
-        real_convert = jobs.convert_to_markdown
+        real_convert = jobs.convert_document
         real_find_diffs = jobs.find_diffs
 
-        def spy_convert(path):
+        def spy_convert(path, max_images_bytes=None):
             note_stage()
-            return real_convert(path)
+            return real_convert(path, max_images_bytes=max_images_bytes)
 
         def spy_find_diffs(blocks1, blocks2):
             note_stage()
             return real_find_diffs(blocks1, blocks2)
 
-        monkeypatch.setattr(jobs, "convert_to_markdown", spy_convert)
+        monkeypatch.setattr(jobs, "convert_document", spy_convert)
         monkeypatch.setattr(jobs, "find_diffs", spy_find_diffs)
 
         app = make_app(MockChat(['{"label": "changed"}'], on_invoke=note_stage))
@@ -558,3 +581,62 @@ class TestJobStatus:
 
         # То этапы выставляются все и именно в этом порядке
         assert observed == ["converting", "diffing", "llm"]
+
+
+# 1x1 px PNG и 1x1 px GIF — разные изображения при одинаковом тексте
+PNG_BYTES = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
+    "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+GIF_BYTES = base64.b64decode(
+    "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+)
+
+
+def docx_bytes_with_image(image_bytes, text="А"):
+    doc = Document()
+    paragraph = doc.add_paragraph(text)
+    paragraph.add_run().add_picture(io.BytesIO(image_bytes))
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf
+
+
+class TestImagesChanged:
+    def _compare_images(self, make_app, image1, image2):
+        app = make_app(MockChat([]))
+        client = app.test_client()
+        ids = []
+        for name, image in (("v1.docx", image1), ("v2.docx", image2)):
+            response = client.post(
+                "/api/upload",
+                data={"file": (docx_bytes_with_image(image), name)},
+                content_type="multipart/form-data",
+            )
+            assert response.status_code == 200
+            ids.append(response.get_json()["upload_id"])
+        job_id = client.post(
+            "/api/compare", json={"upload_id_1": ids[0], "upload_id_2": ids[1]}
+        ).get_json()["job_id"]
+        body = client.get(f"/api/jobs/{job_id}").get_json()
+        assert body["status"] == "done"
+        return body["result"]["rows"]
+
+    def test_same_text_different_images_marked(self, make_app):
+        # Дано блоки с одинаковым текстом, но разными изображениями
+        rows = self._compare_images(make_app, PNG_BYTES, GIF_BYTES)
+        # То текстовых различий нет, но стороны помечены images_changed
+        (row,) = rows
+        assert row["left"]["change"] is None
+        assert row["left"]["images_changed"] is True
+        assert row["right"]["images_changed"] is True
+        assert row["left"]["images"][0].startswith("data:image/png;base64,")
+        assert row["right"]["images"][0].startswith("data:image/gif;base64,")
+
+    def test_same_images_not_marked(self, make_app):
+        # Дано блоки с одинаковым текстом и одинаковым изображением
+        rows = self._compare_images(make_app, PNG_BYTES, PNG_BYTES)
+        (row,) = rows
+        assert "images_changed" not in row["left"]
+        assert "images_changed" not in row["right"]

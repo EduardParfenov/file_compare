@@ -1,7 +1,8 @@
-"""Алгоритмический diff двух Markdown-документов по блокам.
+"""Алгоритмический diff двух документов по блокам.
 
-Блок — заголовок, абзац или строка таблицы. Сравнение последовательностей
-блоков выполняется через difflib.SequenceMatcher. Фрагменты replace
+Блок — заголовок, абзац или строка таблицы; разбиение документа на блоки
+выполняет конвертер. Сравнение последовательностей текстов блоков
+выполняется через difflib.SequenceMatcher. Фрагменты replace
 дополнительно уточняются по похожести блоков, чтобы отличать изменённые
 блоки от удалённых и добавленных. Для изменённых пар блоков вычисляется
 пословный diff (inline_diff) — для подсветки только различающихся слов.
@@ -70,34 +71,22 @@ def is_table_separator(text: str) -> bool:
     return bool(cells) and all(_SEPARATOR_CELL_RE.match(c) for c in cells)
 
 
-def split_blocks(markdown: str) -> list[str]:
-    """Разбивает Markdown на упорядоченные блоки.
+def normalize_blocks(blocks: list[dict]) -> list[dict]:
+    """Нормализует блоки документа перед сравнением.
 
-    Каждая строка таблицы — отдельный блок; иные непустые строки,
-    идущие подряд, образуют один блок (абзац/заголовок).
-    Пустые строки игнорируются. Пробельные символы (в т.ч. неразрывные
-    пробелы) нормализуются, чтобы невидимые различия не давали
-    ложных изменений.
+    Пробельные символы (в т.ч. неразрывные пробелы) в text сворачиваются
+    в один пробел, чтобы невидимые различия не давали ложных изменений.
+    Блоки без содержимого (ни текста, ни изображений) отбрасываются.
+    Порядок блоков сохраняется; гранулярность определяется конвертером
+    и не пересматривается.
     """
-    blocks: list[str] = []
-    paragraph: list[str] = []
-
-    def flush_paragraph():
-        if paragraph:
-            blocks.append("\n".join(paragraph))
-            paragraph.clear()
-
-    for line in markdown.splitlines():
-        stripped = " ".join(line.split())
-        if not stripped:
-            flush_paragraph()
-        elif stripped.startswith("|"):
-            flush_paragraph()
-            blocks.append(stripped)
-        else:
-            paragraph.append(stripped)
-    flush_paragraph()
-    return blocks
+    normalized: list[dict] = []
+    for block in blocks:
+        text = " ".join(block["text"].split())
+        if not text and not block.get("images"):
+            continue
+        normalized.append({**block, "text": text})
+    return normalized
 
 
 def find_diffs(old_blocks: list[str], new_blocks: list[str]) -> list[dict]:
