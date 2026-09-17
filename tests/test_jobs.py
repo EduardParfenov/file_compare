@@ -640,3 +640,61 @@ class TestImagesChanged:
         (row,) = rows
         assert "images_changed" not in row["left"]
         assert "images_changed" not in row["right"]
+
+
+class TestOneSidedRowClassification:
+    """Класс односторонней строки — структурный, независимо от метки LLM
+    (spec: comparison-jobs / «Класс изменения строки результата»)."""
+
+    def _compare(self, make_app, labels, paragraphs1, paragraphs2):
+        app = make_app(MockChat(['{"label": "%s"}' % label for label in labels]))
+        client = app.test_client()
+        id1 = upload_docx(client, "v1.docx", paragraphs1)
+        id2 = upload_docx(client, "v2.docx", paragraphs2)
+        job_id = client.post(
+            "/api/compare", json={"upload_id_1": id1, "upload_id_2": id2}
+        ).get_json()["job_id"]
+        body = client.get(f"/api/jobs/{job_id}").get_json()
+        assert body["status"] == "done"
+        return body["result"]["rows"]
+
+    def test_insert_labeled_changed_gets_added(self, make_app):
+        # Дано чистый insert (например, абзац только с картинкой — LLM
+        # видит "(пусто)" с обеих сторон) классифицирован как changed
+        rows = self._compare(make_app, ["changed"], ["А"], ["А", "Б"])
+        # То сторона файла 2 — added, пустое место слева — место добавления
+        assert rows[1]["left"] is None
+        assert rows[1]["right"]["change"] == "added"
+
+    def test_delete_labeled_changed_gets_removed(self, make_app):
+        # Дано чистый delete, классифицированный как changed
+        rows = self._compare(make_app, ["changed"], ["А", "Б"], ["А"])
+        # То сторона файла 1 — removed, пустое место справа — место удаления
+        assert rows[1]["right"] is None
+        assert rows[1]["left"]["change"] == "removed"
+
+    def test_replace_tail_gets_added(self, make_app):
+        # Дано replace-фрагмент: две похожие пары + хвост из одного нового блока
+        rows = self._compare(
+            make_app,
+            ["changed", "changed", "changed"],
+            ["Строка А1", "Строка А2"],
+            ["Строка Б1", "Строка Б2", "Строка Б3"],
+        )
+        # То парные строки — changed (по метке), хвост — added (структурно)
+        assert rows[0]["left"]["change"] == "changed"
+        assert rows[0]["right"]["change"] == "changed"
+        assert rows[1]["left"]["change"] == "changed"
+        assert rows[2]["left"] is None
+        assert rows[2]["right"]["change"] == "added"
+
+    def test_paired_rows_keep_label(self, make_app):
+        # Дано replace-фрагмент из одной пары блоков с меткой changed
+        rows = self._compare(
+            make_app, ["changed"], ["ББ текст первый"], ["ББ текст второй"]
+        )
+        # То обе стороны — changed, пословная подсветка сохранена
+        (row,) = rows
+        assert row["left"]["change"] == "changed"
+        assert row["right"]["change"] == "changed"
+        assert "segments" in row["left"]

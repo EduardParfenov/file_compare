@@ -197,6 +197,15 @@ def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
                 if k < len(new)
                 else None
             )
+            # Односторонняя строка (чистый insert/delete или хвост
+            # replace-фрагмента): класс структурный, метка классификации
+            # применима только к парным строкам — иначе, например, insert
+            # с меткой changed (LLM видит "(пусто)" для картиночных
+            # блоков) оставляет заглушку без подсветки
+            if left is None:
+                right["change"] = "added"
+            elif right is None:
+                left["change"] = "removed"
             # Изменённая пара: пословный diff для подсветки только
             # различающихся слов (для строк таблиц — по ячейкам)
             if left and right and label["label"] == "changed":
