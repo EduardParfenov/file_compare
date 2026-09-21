@@ -626,18 +626,117 @@ class TestImagesChanged:
     def test_same_text_different_images_marked(self, make_app):
         # Дано блоки с одинаковым текстом, но разными изображениями
         rows = self._compare_images(make_app, PNG_BYTES, GIF_BYTES)
-        # То текстовых различий нет, но стороны помечены images_changed
-        (row,) = rows
-        assert row["left"]["change"] is None
-        assert row["left"]["images_changed"] is True
-        assert row["right"]["images_changed"] is True
-        assert row["left"]["images"][0].startswith("data:image/png;base64,")
-        assert row["right"]["images"][0].startswith("data:image/gif;base64,")
+        # То текст — парная строка без картинок, картинки — парная
+        # под-строка замены с признаком различия у обеих сторон
+        text_row, img_row = rows
+        assert text_row["left"]["change"] is None
+        assert text_row["left"]["images"] == []
+        assert img_row["left"]["images_changed"] is True
+        assert img_row["right"]["images_changed"] is True
+        assert img_row["left"]["images"][0].startswith("data:image/png;base64,")
+        assert img_row["right"]["images"][0].startswith("data:image/gif;base64,")
 
     def test_same_images_not_marked(self, make_app):
         # Дано блоки с одинаковым текстом и одинаковым изображением
         rows = self._compare_images(make_app, PNG_BYTES, PNG_BYTES)
         (row,) = rows
+        assert "images_changed" not in row["left"]
+        assert "images_changed" not in row["right"]
+
+
+class TestImageSubrows:
+    """Декомпозиция изображений парного блока в под-строки результата
+    (spec: comparison-jobs / «Декомпозиция изображений блока»)."""
+
+    def _compare(self, make_app, file1, file2, chat=None):
+        app = make_app(chat or MockChat([]))
+        client = app.test_client()
+        ids = []
+        for name, data in (("v1.docx", file1), ("v2.docx", file2)):
+            response = client.post(
+                "/api/upload",
+                data={"file": (data, name)},
+                content_type="multipart/form-data",
+            )
+            assert response.status_code == 200
+            ids.append(response.get_json()["upload_id"])
+        job_id = client.post(
+            "/api/compare", json={"upload_id_1": ids[0], "upload_id_2": ids[1]}
+        ).get_json()["job_id"]
+        body = client.get(f"/api/jobs/{job_id}").get_json()
+        assert body["status"] == "done"
+        return body["result"]["rows"]
+
+    def test_image_added_into_unchanged_paragraph(self, make_app):
+        # Дано в файле 2 картинка добавлена в абзац с неизменным текстом
+        rows = self._compare(
+            make_app, docx_bytes(["А"]), docx_bytes_with_image(PNG_BYTES, text="А")
+        )
+        # То текст — парная строка без подсветки и без картинок,
+        # картинка — односторонняя под-строка added
+        text_row, img_row = rows
+        assert text_row["left"]["change"] is None
+        assert text_row["right"]["change"] is None
+        assert text_row["left"]["images"] == []
+        assert text_row["right"]["images"] == []
+        assert img_row["left"] is None
+        assert img_row["right"]["change"] == "added"
+        assert img_row["right"]["images"][0].startswith("data:image/png;base64,")
+
+    def test_image_removed_from_unchanged_paragraph(self, make_app):
+        # Дано из файла 2 удалена картинка, текст абзаца не изменился
+        rows = self._compare(
+            make_app, docx_bytes_with_image(PNG_BYTES, text="А"), docx_bytes(["А"])
+        )
+        # То картинка — односторонняя под-строка removed
+        text_row, img_row = rows
+        assert text_row["left"]["change"] is None
+        assert img_row["right"] is None
+        assert img_row["left"]["change"] == "removed"
+        assert img_row["left"]["images"][0].startswith("data:image/png;base64,")
+
+    def test_image_replaced_in_unchanged_paragraph(self, make_app):
+        # Дано при неизменном тексте картинка заменена другой
+        rows = self._compare(
+            make_app,
+            docx_bytes_with_image(PNG_BYTES, text="А"),
+            docx_bytes_with_image(GIF_BYTES, text="А"),
+        )
+        # То картинки — парная под-строка замены с признаком различия у обеих
+        text_row, img_row = rows
+        assert text_row["left"]["images"] == []
+        assert img_row["left"]["images_changed"] is True
+        assert img_row["right"]["images_changed"] is True
+        assert img_row["left"]["images"][0].startswith("data:image/png;base64,")
+        assert img_row["right"]["images"][0].startswith("data:image/gif;base64,")
+
+    def test_image_subrow_structural_with_changed_label(self, make_app):
+        # Дано изменён текст И добавлена картинка, LLM метит фрагмент changed
+        rows = self._compare(
+            make_app,
+            docx_bytes(["ББ текст первый"]),
+            docx_bytes_with_image(PNG_BYTES, text="ББ текст второй"),
+            chat=MockChat(['{"label": "changed"}']),
+        )
+        # То текст — changed с пословным diff, картинка — под-строка added
+        # (структурно, независимо от метки)
+        text_row, img_row = rows
+        assert text_row["left"]["change"] == "changed"
+        assert "segments" in text_row["left"]
+        assert img_row["left"] is None
+        assert img_row["right"]["change"] == "added"
+
+    def test_same_images_stay_in_paired_row(self, make_app):
+        # Дано одинаковые картинки в одинаковых абзацах
+        rows = self._compare(
+            make_app,
+            docx_bytes_with_image(PNG_BYTES, text="А"),
+            docx_bytes_with_image(PNG_BYTES, text="А"),
+        )
+        # То декомпозиции нет: картинки в парной строке, без подсветки
+        (row,) = rows
+        assert len(row["left"]["images"]) == 1
+        assert len(row["right"]["images"]) == 1
         assert "images_changed" not in row["left"]
         assert "images_changed" not in row["right"]
 
