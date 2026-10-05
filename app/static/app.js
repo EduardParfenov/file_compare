@@ -457,15 +457,24 @@ function renderResult(result) {
     equalizeHeights();
 }
 
-// Синхронный скролл панелей (без зацикливания через флаг)
-let syncing = false;
+// Синхронный скролл панелей по обеим осям.
+//
+// Запись scrollTop/scrollLeft в другую панель вызывает событие прокрутки
+// в ней. У широких таблиц scrollWidth панелей различается, поэтому целевая
+// панель обрезает присланное смещение, а её эхо-событие возвращает
+// источнику уже обрезанное значение — панель отскакивает назад у края.
+// Поэтому последнее записанное в каждую панель смещение запоминается:
+// событие, совпадающее с собственной записью, игнорируется.
+const lastWritten = new WeakMap();
 function syncScroll(source, target) {
     source.addEventListener("scroll", () => {
-        if (syncing) return;
-        syncing = true;
+        if (lastWritten.get(source) === source.scrollLeft) {
+            lastWritten.delete(source);
+            return;
+        }
         target.scrollTop = source.scrollTop;
         target.scrollLeft = source.scrollLeft;
-        syncing = false;
+        lastWritten.set(target, target.scrollLeft);
     });
 }
 

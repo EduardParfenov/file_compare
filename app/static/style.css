@@ -233,6 +233,7 @@ p {
 .diff-panel h2 {
     position: sticky;
     top: 0;
+    left: 0;
     font-size: 1rem;
     padding: 10px 14px;
     background: var(--gray-200);
@@ -265,15 +266,19 @@ p {
     background: var(--green-light);
 }
 
-/* Таблицы */
+/* Таблицы. Ширина колонок — по содержимому (max-content), а не по ширине
+   панели: широкая таблица прокручивается по горизонтали самой панелью,
+   поэтому вложенный горизонтальный скролл-контейнер не создаётся.
+   Нижний предел 4em не даёт колонке из коротких значений схлопнуться
+   в одну букву, верхний 40em — раздуться от ячейки с длинным абзацем. */
 .diff-table {
     padding: 6px 8px;
-    overflow-x: auto;
 }
 
 .diff-table table {
     border-collapse: collapse;
-    width: 100%;
+    width: max-content;
+    min-width: 100%;
 }
 
 .diff-table td {
@@ -281,6 +286,8 @@ p {
     padding: 4px 8px;
     text-align: left;
     vertical-align: top;
+    min-width: 4em;
+    max-width: 40em;
 }
 
 .diff-table tr.change-removed {
