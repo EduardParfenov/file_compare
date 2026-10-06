@@ -588,9 +588,7 @@ PNG_BYTES = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
     "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
 )
-GIF_BYTES = base64.b64decode(
-    "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
-)
+GIF_BYTES = base64.b64decode("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
 
 
 def docx_bytes_with_image(image_bytes, text="А"):
@@ -746,7 +744,7 @@ class TestOneSidedRowClassification:
     (spec: comparison-jobs / «Класс изменения строки результата»)."""
 
     def _compare(self, make_app, labels, paragraphs1, paragraphs2):
-        app = make_app(MockChat(['{"label": "%s"}' % label for label in labels]))
+        app = make_app(MockChat([f'{{"label": "{label}"}}' for label in labels]))
         client = app.test_client()
         id1 = upload_docx(client, "v1.docx", paragraphs1)
         id2 = upload_docx(client, "v2.docx", paragraphs2)

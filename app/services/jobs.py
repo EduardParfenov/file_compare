@@ -202,9 +202,7 @@ def _image_subrows(old: dict, new: dict) -> list[dict]:
                 {"left": _image_side(old_imgs[i1:i2], "removed"), "right": None}
             )
         elif opcode == "insert":
-            rows.append(
-                {"left": None, "right": _image_side(new_imgs[j1:j2], "added")}
-            )
+            rows.append({"left": None, "right": _image_side(new_imgs[j1:j2], "added")})
         else:  # replace: пары — под-строки замены, хвосты — односторонние
             olds, news = old_imgs[i1:i2], new_imgs[j1:j2]
             for k in range(max(len(olds), len(news))):

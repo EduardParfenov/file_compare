@@ -115,13 +115,15 @@ def _paragraph_images(paragraph: Paragraph, budget: list[int]) -> list[dict]:
                 data_uri = "data:{};base64,{}".format(
                     part.content_type, base64.b64encode(blob).decode("ascii")
                 )
-            except Exception:  # noqa: BLE001 — битое изображение не отменяет конвертацию
+            except Exception:  # noqa: BLE001, S112 — битое изображение не отменяет конвертацию
                 continue
             if len(blob) > budget[0]:
                 budget[0] = 0
                 continue  # лимит исчерпан: хвост изображений отбрасывается
             budget[0] -= len(blob)
-            images.append({"data_uri": data_uri, "sha1": hashlib.sha1(blob).hexdigest()})
+            images.append(
+                {"data_uri": data_uri, "sha1": hashlib.sha1(blob).hexdigest()}
+            )
     return images
 
 

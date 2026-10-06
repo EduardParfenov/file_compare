@@ -78,5 +78,6 @@ pytest                 # все тесты; LLM замокана
 - `REVIEW.md` — рецензия: покрытие тестами, расхождения спек и кода;
   при изменении поведения актуализировать.
 - `openspec/specs/` — спецификации возможностей (comparison-jobs,
-  diff-viewer, document-diff, file-upload, llm-classification,
-  markdown-conversion).
+  continuous-integration, diff-viewer, document-diff, file-upload,
+  llm-classification, markdown-conversion, project-version,
+  release-process).
