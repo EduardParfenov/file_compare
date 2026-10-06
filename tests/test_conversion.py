@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.services.conversion import UnsupportedFormatError, convert_to_markdown
+from app.services.conversion import UnsupportedFormatError, convert_document
 
 
 def test_unsupported_extension(tmp_path):
@@ -11,7 +11,7 @@ def test_unsupported_extension(tmp_path):
     path.write_bytes(b"fake")
     # Когда/То конвертация отклоняется с ошибкой «формат не поддерживается»
     with pytest.raises(UnsupportedFormatError, match="не поддерживается"):
-        convert_to_markdown(str(path))
+        convert_document(str(path))
 
 
 def test_dispatch_docx(tmp_path):
@@ -22,4 +22,8 @@ def test_dispatch_docx(tmp_path):
     doc.add_paragraph("Привет")
     doc.save(path)
 
-    assert convert_to_markdown(str(path)) == "Привет"
+    blocks = convert_document(str(path))
+    assert len(blocks) == 1
+    assert blocks[0]["text"] == "Привет"
+    assert blocks[0]["html"] == "<p>Привет</p>"
+    assert blocks[0]["images"] == []

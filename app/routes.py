@@ -65,6 +65,7 @@ def compare():
         path1,
         path2,
         _get_chat(),
+        max_images_bytes=current_app.config["MAX_IMAGES_TOTAL_BYTES"],
         synchronous=current_app.config.get("JOBS_SYNCHRONOUS", False),
     )
     return jsonify({"job_id": job_id}), 202

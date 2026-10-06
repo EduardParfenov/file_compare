@@ -1,47 +1,49 @@
-"""Тесты алгоритмического diff по блокам Markdown (spec: document-diff)."""
+"""Тесты алгоритмического diff по блокам документа (spec: document-diff)."""
 
 from app.services.diffing import (
     find_diffs,
     inline_diff,
     is_table_separator,
+    normalize_blocks,
     parse_table_row,
     refine_fragments,
-    split_blocks,
 )
 
 
-class TestSplitBlocks:
-    def test_mixed_document(self):
-        # Дано Markdown из заголовка, двух абзацев и таблицы из двух строк
-        markdown = (
-            "# Заголовок\n\nАбзац 1\n\nАбзац 2\n\n| A | B |\n| --- | --- |\n| 1 | 2 |"
-        )
-        # Когда выполняется разбиение
-        blocks = split_blocks(markdown)
-        # То заголовок и абзацы — отдельные блоки, каждая строка таблицы — отдельный блок
-        assert blocks == [
-            "# Заголовок",
-            "Абзац 1",
-            "Абзац 2",
-            "| A | B |",
-            "| --- | --- |",
-            "| 1 | 2 |",
-        ]
+def make_block(text, images=None):
+    return {"text": text, "html": f"<p>{text}</p>", "images": images or []}
 
-    def test_blank_lines_ignored(self):
-        assert split_blocks("А\n\n\n\nБ\n\n") == ["А", "Б"]
 
-    def test_empty(self):
-        assert split_blocks("") == []
-
-    def test_multiline_paragraph_is_one_block(self):
-        assert split_blocks("строка 1\nстрока 2") == ["строка 1\nстрока 2"]
-
+class TestNormalizeBlocks:
     def test_whitespace_normalized(self):
         # Неразрывные и повторные пробелы не должны порождать ложные различия
-        assert split_blocks("Текст с неразрывными   пробелами") == [
-            "Текст с неразрывными пробелами"
-        ]
+        blocks = normalize_blocks([make_block("Текст с неразрывными   пробелами")])
+        assert [b["text"] for b in blocks] == ["Текст с неразрывными пробелами"]
+
+    def test_empty_blocks_dropped(self):
+        # Блоки без текста и изображений отбрасываются
+        blocks = normalize_blocks(
+            [make_block("А"), make_block("  \n\t "), make_block("Б")]
+        )
+        assert [b["text"] for b in blocks] == ["А", "Б"]
+
+    def test_image_only_block_kept(self):
+        # Блок без текста, но с изображением — содержимое есть, не отбрасывается
+        image = {"data_uri": "data:image/png;base64,x", "sha1": "abc"}
+        blocks = normalize_blocks([make_block("", images=[image])])
+        assert len(blocks) == 1
+        assert blocks[0]["text"] == ""
+
+    def test_order_preserved(self):
+        source = [make_block(t) for t in ["# Заголовок", "Абзац", "| A | B |"]]
+        blocks = normalize_blocks(source)
+        assert [b["text"] for b in blocks] == ["# Заголовок", "Абзац", "| A | B |"]
+
+    def test_html_and_images_preserved(self):
+        image = {"data_uri": "data:image/png;base64,x", "sha1": "abc"}
+        (block,) = normalize_blocks([make_block(" А ", images=[image])])
+        assert block["html"] == "<p> А </p>"
+        assert block["images"] == [image]
 
 
 class TestFindDiffs:

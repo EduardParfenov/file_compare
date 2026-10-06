@@ -1,18 +1,19 @@
 """Задачи сравнения: in-memory store, этапные статусы, пайплайн обработки."""
 
+import difflib
 import threading
 import uuid
 from itertools import zip_longest
 
-from app.services.conversion import convert_to_markdown
+from app.services.conversion import convert_document
 from app.services.diffing import (
     find_diffs,
     inline_diff,
     is_table_row,
     is_table_separator,
+    normalize_blocks,
     parse_table_row,
     refine_fragments,
-    split_blocks,
 )
 from app.services.llm import classify_fragments
 
@@ -54,30 +55,43 @@ def clear_jobs() -> None:
 
 
 def start_job(
-    job_id: str, path1: str, path2: str, chat, synchronous: bool = False
+    job_id: str,
+    path1: str,
+    path2: str,
+    chat,
+    max_images_bytes: int | None = None,
+    synchronous: bool = False,
 ) -> None:
     """Запускает пайплайн сравнения (в потоке либо синхронно для тестов)."""
     if synchronous:
-        run_pipeline(job_id, path1, path2, chat)
+        run_pipeline(job_id, path1, path2, chat, max_images_bytes)
     else:
         thread = threading.Thread(
-            target=run_pipeline, args=(job_id, path1, path2, chat), daemon=True
+            target=run_pipeline,
+            args=(job_id, path1, path2, chat, max_images_bytes),
+            daemon=True,
         )
         thread.start()
 
 
-def run_pipeline(job_id: str, path1: str, path2: str, chat) -> None:
+def run_pipeline(
+    job_id: str, path1: str, path2: str, chat, max_images_bytes: int | None = None
+) -> None:
     """Конвертация → diff → классификация LLM → результат. Никогда не бросает."""
     job = _JOBS[job_id]
     try:
         set_stage(job_id, "converting")
-        markdown1 = convert_to_markdown(path1)
-        markdown2 = convert_to_markdown(path2)
+        blocks1 = normalize_blocks(
+            convert_document(path1, max_images_bytes=max_images_bytes)
+        )
+        blocks2 = normalize_blocks(
+            convert_document(path2, max_images_bytes=max_images_bytes)
+        )
 
         set_stage(job_id, "diffing")
-        blocks1 = split_blocks(markdown1)
-        blocks2 = split_blocks(markdown2)
-        fragments = refine_fragments(find_diffs(blocks1, blocks2))
+        texts1 = [block["text"] for block in blocks1]
+        texts2 = [block["text"] for block in blocks2]
+        fragments = refine_fragments(find_diffs(texts1, texts2))
 
         set_stage(job_id, "llm")
         labels, semantic = classify_fragments(fragments, chat)
@@ -124,6 +138,87 @@ def _cell_fallback_segments(a: str, b: str) -> tuple[list[dict], list[dict]]:
     return left, right
 
 
+def _images_sha(block: dict) -> list[str]:
+    """Подписи изображений блока для сравнения сторон."""
+    return [img["sha1"] for img in block["images"]]
+
+
+def _row_side(block: dict, change: str | None) -> dict:
+    """Сторона строки результата: текст плюс отображение (html, images)."""
+    side = {
+        "text": block["text"],
+        "change": change,
+        "html": block["html"],
+        "images": [img["data_uri"] for img in block["images"]],
+    }
+    _enrich_table_block(side)
+    return side
+
+
+def _mark_images_changed(left: dict, right: dict, old: dict, new: dict) -> None:
+    """Помечает пару сторон, если изображения блоков различаются (текст
+    может совпадать — текстовый diff замену картинки не видит)."""
+    if _images_sha(old) != _images_sha(new):
+        left["images_changed"] = True
+        right["images_changed"] = True
+
+
+def _image_side(images: list[dict], change: str | None) -> dict:
+    """Сторона под-строки изображений: только картинки, без текста."""
+    return {
+        "text": "",
+        "change": change,
+        "html": "",
+        "images": [img["data_uri"] for img in images],
+    }
+
+
+def _image_subrows(old: dict, new: dict) -> list[dict]:
+    """Под-строки изображений парного блока: выравнивание по подписям sha1.
+
+    Пустой список, если наборы изображений совпадают (блок остаётся одной
+    парной строкой). Иначе: совпавшие — парные под-строки без класса,
+    только старые — односторонние removed, только новые — added, пара
+    разных на парной позиции — под-строка замены с images_changed у обеих
+    сторон. Классы структурные и не зависят от метки классификации.
+    """
+    old_imgs, new_imgs = old["images"], new["images"]
+    old_shas = [img["sha1"] for img in old_imgs]
+    new_shas = [img["sha1"] for img in new_imgs]
+    if old_shas == new_shas:
+        return []
+    rows = []
+    matcher = difflib.SequenceMatcher(None, old_shas, new_shas, autojunk=False)
+    for opcode, i1, i2, j1, j2 in matcher.get_opcodes():
+        if opcode == "equal":
+            rows.append(
+                {
+                    "left": _image_side(old_imgs[i1:i2], None),
+                    "right": _image_side(new_imgs[j1:j2], None),
+                }
+            )
+        elif opcode == "delete":
+            rows.append(
+                {"left": _image_side(old_imgs[i1:i2], "removed"), "right": None}
+            )
+        elif opcode == "insert":
+            rows.append({"left": None, "right": _image_side(new_imgs[j1:j2], "added")})
+        else:  # replace: пары — под-строки замены, хвосты — односторонние
+            olds, news = old_imgs[i1:i2], new_imgs[j1:j2]
+            for k in range(max(len(olds), len(news))):
+                left = _image_side([olds[k]], None) if k < len(olds) else None
+                right = _image_side([news[k]], None) if k < len(news) else None
+                if left is None:
+                    right["change"] = "added"
+                elif right is None:
+                    left["change"] = "removed"
+                else:
+                    left["images_changed"] = True
+                    right["images_changed"] = True
+                rows.append({"left": left, "right": right})
+    return rows
+
+
 def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
     """Выровненные строки side-by-side: {left, right}, None — пустое место.
 
@@ -133,14 +228,26 @@ def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
     rows = []
     pos1 = pos2 = 0  # позиции, до которых документы совпадают
 
+    def emit_paired(old: dict, new: dict, left: dict, right: dict) -> None:
+        """Парная строка; при различающихся наборах изображений (вне
+        таблиц) изображения выносятся из текстовой строки в под-строки,
+        выровненные по sha1. Для таблиц — прежнее поведение (рамки)."""
+        if is_table_row(old["text"]) or is_table_row(new["text"]):
+            _mark_images_changed(left, right, old, new)
+            rows.append({"left": left, "right": right})
+            return
+        subs = _image_subrows(old, new)
+        if subs:
+            left["images"] = []
+            right["images"] = []
+        rows.append({"left": left, "right": right})
+        rows.extend(subs)
+
     def emit_equal(end1: int, end2: int) -> None:
         nonlocal pos1, pos2
         for k in range(end1 - pos1):
-            left = {"text": blocks1[pos1 + k], "change": None}
-            right = {"text": blocks2[pos2 + k], "change": None}
-            _enrich_table_block(left)
-            _enrich_table_block(right)
-            rows.append({"left": left, "right": right})
+            old, new = blocks1[pos1 + k], blocks2[pos2 + k]
+            emit_paired(old, new, _row_side(old, None), _row_side(new, None))
         pos1, pos2 = end1, end2
 
     for frag, label in zip(fragments, labels):
@@ -150,19 +257,24 @@ def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
         new = blocks2[j1:j2]
         for k in range(max(len(old), len(new))):
             left = (
-                {"text": old[k], "change": _side_change(label["label"], "left")}
+                _row_side(old[k], _side_change(label["label"], "left"))
                 if k < len(old)
                 else None
             )
             right = (
-                {"text": new[k], "change": _side_change(label["label"], "right")}
+                _row_side(new[k], _side_change(label["label"], "right"))
                 if k < len(new)
                 else None
             )
-            if left:
-                _enrich_table_block(left)
-            if right:
-                _enrich_table_block(right)
+            # Односторонняя строка (чистый insert/delete или хвост
+            # replace-фрагмента): класс структурный, метка классификации
+            # применима только к парным строкам — иначе, например, insert
+            # с меткой changed (LLM видит "(пусто)" для картиночных
+            # блоков) оставляет заглушку без подсветки
+            if left is None:
+                right["change"] = "added"
+            elif right is None:
+                left["change"] = "removed"
             # Изменённая пара: пословный diff для подсветки только
             # различающихся слов (для строк таблиц — по ячейкам)
             if left and right and label["label"] == "changed":
@@ -177,10 +289,16 @@ def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
                     left["cell_segments"] = left_segs
                     right["cell_segments"] = right_segs
                 elif "sep" not in left and "sep" not in right:
-                    segments = inline_diff(old[k], new[k])
+                    segments = inline_diff(old[k]["text"], new[k]["text"])
                     if segments:
                         left["segments"], right["segments"] = segments
-            rows.append({"left": left, "right": right})
+            # Парная строка: при различающихся наборах изображений они
+            # выносятся в под-строки; односторонняя — блок целиком со
+            # своими изображениями напротив пустого места
+            if left and right:
+                emit_paired(old[k], new[k], left, right)
+            else:
+                rows.append({"left": left, "right": right})
         pos1, pos2 = i2, j2
     emit_equal(len(blocks1), len(blocks2))
     return rows
