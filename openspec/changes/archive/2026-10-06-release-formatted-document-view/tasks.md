@@ -39,17 +39,39 @@ ruff 0.16.7 учитывает и Markdown-файлы (блоки кода в `*
 
 ## 4. Коммит и отправка в remote
 
-- [ ] 4.1 Сделать один коммит в стиле репозитория: `fix: форматирование и линтер перед выпуском в master (ruff format, S112, UP031); архивация change release-formatted-document-view; версия 1.0.4`; проверить `git status` (чисто) и состав коммита — только 3 файла кода, `VERSION`, архив change'а и файлы спек.
-- [ ] 4.2 Выполнить `git fetch origin` и `git rev-list --left-right --count origin/master...HEAD` → `0 5` (отставания от `master` нет, ветка впереди на пять коммитов).
-- [ ] 4.3 Выполнить `git push origin formatted-document-view` и убедиться, что `git rev-list --left-right --count origin/master...origin/formatted-document-view` → `0 5`.
+- [x] 4.1 Сделать один коммит в стиле репозитория: `fix: форматирование и линтер перед выпуском в master (ruff format, S112, UP031); архивация change release-formatted-document-view; версия 1.0.4`; проверить `git status` (чисто) и состав коммита — только 3 файла кода, `VERSION`, архив change'а и файлы спек.
+- [x] 4.2 Выполнить `git fetch origin` и `git rev-list --left-right --count origin/master...HEAD` → `0 5` (отставания от `master` нет, ветка впереди на пять коммитов).
+- [x] 4.3 Выполнить `git push origin formatted-document-view` и убедиться, что `git rev-list --left-right --count origin/master...origin/formatted-document-view` → `0 5`.
+
+Фактические результаты: коммит `50af046`, 13 файлов (3 файла кода,
+`VERSION`, `AGENTS.md`, архив change'а из 6 файлов, 2 файла спек — всего 13
+путей), рабочее дерево чистое; `git fetch origin` без изменений на remote;
+`0 5` до и после push.
 
 ## 5. Pull request
 
-- [ ] 5.1 Создать PR базой `master`: `gh pr create --base master --head formatted-document-view`; в описании указать назначение (форматированный вид документов, изображения в diff, широкие таблицы), перечень пяти коммитов и архивированных change'ей, состав выполненных проверок (`ruff format --check .`, `ruff check .`, `pytest` 118 passed, `openspec validate --all --strict` 9 passed) и уровень «исправление» — несовместимых изменений нет.
-- [ ] 5.2 Дождаться зелёного CI: `gh pr checks <N> --watch`; если шаг красный — исправить причину в ветке отдельным коммитом, перезапустить проверку, слияние не форсировать.
+- [x] 5.1 Создать PR базой `master`: `gh pr create --base master --head formatted-document-view`; в описании указать назначение (форматированный вид документов, изображения в diff, широкие таблицы), перечень пяти коммитов и архивированных change'ей, состав выполненных проверок (`ruff format --check .`, `ruff check .`, `pytest` 118 passed, `openspec validate --all --strict` 9 passed) и уровень «исправление» — несовместимых изменений нет.
+- [x] 5.2 Дождаться зелёного CI: `gh pr checks <N> --watch`; если шаг красный — исправить причину в ветке отдельным коммитом, перезапустить проверку, слияние не форсировать.
+
+Фактические результаты: PR #3
+(https://github.com/EduardParfenov/file_compare/pull/3, 51 файл, +3264/−384,
+`MERGEABLE`); прогон `ci` (run 37419661034) — `success`, все 11 шагов
+зелёные, включая gitleaks и pip-audit. Итоговый счётчик локального
+`ruff format --check .` — 143 файла (плюс файлы архива и новой спеки).
 
 ## 6. Слияние и завершение выпуска
 
-- [ ] 6.1 Выполнить `gh pr merge <N> --merge` (merge-коммит, без squash) и проверить: в `origin/master` появился merge-коммит с двумя родителями, пять коммитов ветки сохранены в истории без squash.
-- [ ] 6.2 Выполнить `git push origin --delete formatted-document-view` и убедиться, что все пять коммитов присутствуют в `origin/master`, а remote-ветка удалена; теги и GitHub Release не созданы.
-- [ ] 6.3 Проверить `git log --oneline -3 origin/master` → merge-коммит PR и `VERSION` в репозитории содержит `1.0.4`.
+- [x] 6.1 Выполнить `gh pr merge <N> --merge` (merge-коммит, без squash) и проверить: в `origin/master` появился merge-коммит с двумя родителями, пять коммитов ветки сохранены в истории без squash.
+- [x] 6.2 Выполнить `git push origin --delete formatted-document-view` и убедиться, что все пять коммитов присутствуют в `origin/master`, а remote-ветка удалена; теги и GitHub Release не созданы.
+- [x] 6.3 Проверить `git log --oneline -3 origin/master` → merge-коммит PR и `VERSION` в репозитории содержит `1.0.4`.
+
+Фактические результаты: merge-коммит `dcfd0c4` (родители `aa94917` и
+`50af046`), пять коммитов ветки в истории `master` без squash; remote-ветка
+`formatted-document-view` удалена, на remote остались только `origin/master`
+и `origin/HEAD`; тегов — 0, GitHub Release — 0; `VERSION` в `origin/master`
+= `1.0.4`. Прогон CI по push в `master` — `success`.
+
+Записи о выполнении задач 4–6 внесены после слияния, поэтому в `master`
+попали в том состоянии, которое было на момент merge-коммита: задачи 1–3
+отмечены, 4–6 — нет. Отметки 5.x и 6.x зафиксированы локальным коммитом в
+этом архиве (ветка на remote удалена, в `master` этот коммит не попадает).
