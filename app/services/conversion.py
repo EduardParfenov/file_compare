@@ -235,6 +235,14 @@ def _pdf_pair_with_text_layer(
     crops, truncated = _collect_crops(
         old_pages, new_pages, alignment, crops_max_bytes
     )
+    # Текст совпавших страниц не участвует в сравнении — так же, как в ветке
+    # чтения моделью, где такие страницы не читаются вовсе. Иначе страница
+    # показывается дважды: своим содержимым и свёрнутым диапазоном
+    # (spec: pdf-conversion).
+    unchanged_old = {old for old, _ in alignment.identical}
+    unchanged_new = {new for _, new in alignment.identical}
+    blocks1 = _drop_unchanged_pages(blocks1, unchanged_old)
+    blocks2 = _drop_unchanged_pages(blocks2, unchanged_new)
     return {
         "blocks1": blocks1,
         "blocks2": blocks2,
@@ -251,6 +259,21 @@ def _pdf_pair_with_text_layer(
         "page_count2": len(new_pages),
         "is_pdf": True,
     }
+
+
+def _drop_unchanged_pages(blocks: list[dict], pages: set[int]) -> list[dict]:
+    """Блоки страниц, признанных визуально неизменными.
+
+    Блок без номера страницы остаётся: страница неизвестна, терять его
+    содержимое оснований нет.
+    """
+    if not pages:
+        return blocks
+    return [
+        block
+        for block in blocks
+        if block.get("page") is None or block["page"] not in pages
+    ]
 
 
 def _side_blocks(

@@ -6,18 +6,23 @@
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from docx import Document
 
 sys.path.insert(0, str(Path(__file__).parent))
-from pdf_fixtures import write_scan_pdf  # noqa: E402
+from pdf_fixtures import write_scan_pdf, write_text_pdf  # noqa: E402
 
 from app.services import jobs  # noqa: E402
 
 
 def scan(tmp_path, name, texts):
     return write_scan_pdf(tmp_path / name, [[(40, 300, t)] for t in texts])
+
+
+def text_pdf(tmp_path, name, pages):
+    return write_text_pdf(tmp_path / name, pages)
 
 
 class StubChat:
@@ -319,3 +324,215 @@ class TestCollapsedRanges:
             left, right = row.get("left") or {}, row.get("right") or {}
             if left.get("collapsed"):
                 assert right.get("collapsed") == left["collapsed"]
+
+
+class TestIdenticalFlag:
+    """Признак полного совпадения документов (spec: comparison-jobs).
+
+    Каждое условие проверяется отдельно: любой из признаков различия или
+    неизвестности обязан исключать совпадение.
+    """
+
+    @staticmethod
+    def _conversion(**overrides):
+        conversion = {
+            "degraded": False,
+            "alignment": SimpleNamespace(pairs=[], only_old=[], only_new=[]),
+        }
+        conversion.update(overrides)
+        return conversion
+
+    def test_no_difference_means_identical(self):
+        rows = [
+            {"left": {"text": "a", "images": []}, "right": {"text": "a", "images": []}}
+        ]
+        assert jobs._documents_identical(rows, [], self._conversion()) is True
+
+    def test_text_fragment_excludes_identical(self):
+        rows = [
+            {"left": {"text": "a", "images": []}, "right": {"text": "a", "images": []}}
+        ]
+        fragments = [{"old_range": (0, 1), "new_range": (0, 1)}]
+        assert jobs._documents_identical(rows, fragments, self._conversion()) is False
+
+    def test_changed_page_pair_excludes_identical(self):
+        """Страницы различаются, даже если текст прочитан одинаково."""
+        alignment = SimpleNamespace(
+            pairs=[SimpleNamespace(old=1, new=1)], only_old=[], only_new=[]
+        )
+        rows = [
+            {"left": {"text": "a", "images": []}, "right": {"text": "a", "images": []}}
+        ]
+        conversion = self._conversion(alignment=alignment)
+        assert jobs._documents_identical(rows, [], conversion) is False
+
+    def test_page_only_in_one_document_excludes_identical(self):
+        alignment = SimpleNamespace(pairs=[], only_old=[], only_new=[2])
+        rows = [
+            {"left": {"text": "a", "images": []}, "right": {"text": "a", "images": []}}
+        ]
+        conversion = self._conversion(alignment=alignment)
+        assert jobs._documents_identical(rows, [], conversion) is False
+
+    def test_images_changed_excludes_identical(self):
+        rows = [
+            {
+                "left": {"text": "", "images": ["a"], "change": "added"},
+                "right": None,
+            }
+        ]
+        assert jobs._documents_identical(rows, [], self._conversion()) is False
+
+    def test_one_sided_image_row_excludes_identical(self):
+        rows = [
+            {
+                "left": {"text": "a", "images": ["a"], "images_changed": True},
+                "right": {"text": "a", "images": ["b"]},
+            }
+        ]
+        assert jobs._documents_identical(rows, [], self._conversion()) is False
+
+    def test_degraded_conversion_excludes_identical(self):
+        rows = [
+            {"left": {"text": "a", "images": []}, "right": {"text": "a", "images": []}}
+        ]
+        conversion = self._conversion(degraded=True)
+        assert jobs._documents_identical(rows, [], conversion) is False
+
+
+class TestIdenticalFlagInResult:
+    """Признак полного совпадения в результате задачи."""
+
+    def test_identical_scans_flagged_with_marker_rows_only(self, tmp_path, app):
+        path1 = scan(tmp_path, "a.pdf", ["A", "B"])
+        path2 = scan(tmp_path, "b.pdf", ["A", "B"])
+        with app.app_context():
+            result = run(app, path1, path2)["result"]
+        assert result["identical"] is True
+        # Признак не зависит от маркеров диапазонов: строки состоят только из них
+        assert result["rows"]
+        assert all((row["left"] or {}).get("collapsed") for row in result["rows"])
+
+    def test_differing_scans_not_flagged(self, tmp_path, app, monkeypatch):
+        path1 = scan(tmp_path, "a.pdf", ["A", "B"])
+        path2 = scan(tmp_path, "b.pdf", ["CHANGED", "B"])
+        with app.app_context():
+            monkeypatch.setattr(
+                "app.services.conversion._reader_for", lambda chat: _echo_reader()
+            )
+            result = run(app, path1, path2)["result"]
+        assert result["identical"] is False
+        assert any(not (row["left"] or {}).get("collapsed") for row in result["rows"])
+
+    def test_visually_differing_pages_not_flagged_even_with_equal_text(
+        self, tmp_path, app, monkeypatch
+    ):
+        """Картинки страниц различаются, текст прочитан одинаково — это различие."""
+        path1 = scan(tmp_path, "a.pdf", ["A", "B"])
+        path2 = scan(tmp_path, "b.pdf", ["A", "CHANGED"])
+        with app.app_context():
+            monkeypatch.setattr(
+                "app.services.conversion._reader_for", lambda chat: _echo_reader()
+            )
+            result = run(app, path1, path2)["result"]
+        assert result["pages"]["unchanged"] == [[1, 1]]
+        assert result["identical"] is False
+
+    def test_degraded_scan_not_flagged(self, tmp_path, app, monkeypatch):
+        path1 = scan(tmp_path, "a.pdf", ["A", "B"])
+        path2 = scan(tmp_path, "b.pdf", ["A", "CHANGED"])
+        with app.app_context():
+            monkeypatch.setattr(
+                "app.services.conversion._reader_for", lambda chat: _failing_reader()
+            )
+            result = run(app, path1, path2)["result"]
+        assert result["semantic"] is False
+        assert result["identical"] is False
+
+    def test_field_absent_for_docx(self, tmp_path, app):
+        path = tmp_path / "a.docx"
+        document = Document()
+        document.add_paragraph("Абзац")
+        document.save(str(path))
+        with app.app_context():
+            result = run(app, path, path)["result"]
+        assert "identical" not in result
+        assert "pages" not in result
+
+
+class TestTextLayerUnchangedPages:
+    """Совпавшая страница ветки текстового слоя не дублируется.
+
+    Страница показывается либо своим содержимым, либо свёрнутым диапазоном,
+    но не обоими сразу (spec: pdf-conversion).
+    """
+
+    def _result(self, tmp_path, app, pages1, pages2):
+        path1 = text_pdf(tmp_path, "a.pdf", pages1)
+        path2 = text_pdf(tmp_path, "b.pdf", pages2)
+        with app.app_context():
+            return run(app, path1, path2)["result"]
+
+    def test_unchanged_page_blocks_dropped_from_rows(self, tmp_path, app):
+        result = self._result(
+            tmp_path,
+            app,
+            [[(20, 350, "Page one same")], [(20, 350, "Original clause A")]],
+            [[(20, 350, "Page one same")], [(20, 350, "Revised clause B")]],
+        )
+        assert [1, 1] in result["pages"]["unchanged"]
+        pages_in_rows = {
+            (side, (row[side] or {}).get("page"))
+            for row in result["rows"]
+            for side in ("left", "right")
+            if (row[side] or {}).get("page") is not None
+        }
+        assert pages_in_rows == {("left", 2), ("right", 2)}
+
+    def test_unchanged_page_not_shown_twice(self, tmp_path, app):
+        result = self._result(
+            tmp_path,
+            app,
+            [[(20, 350, "Page one same")], [(20, 350, "Original clause A")]],
+            [[(20, 350, "Page one same")], [(20, 350, "Revised clause B")]],
+        )
+        shape = []
+        for row in result["rows"]:
+            left = row.get("left") or {}
+            right = row.get("right") or {}
+            if left.get("collapsed"):
+                shape.append(("range", tuple(left["collapsed"])))
+            else:
+                shape.append(("row", left.get("page"), right.get("page")))
+        assert shape == [("range", (1, 1)), ("row", 2, None), ("row", None, 2)]
+
+    def test_page_numbers_stay_original(self, tmp_path, app):
+        result = self._result(
+            tmp_path,
+            app,
+            [
+                [(20, 350, "Page one")],
+                [(20, 350, "Original two")],
+                [(20, 350, "Page three")],
+            ],
+            [
+                [(20, 350, "Page one")],
+                [(20, 350, "Revised two")],
+                [(20, 350, "Page three")],
+            ],
+        )
+        collapsed = [
+            row["left"]["collapsed"]
+            for row in result["rows"]
+            if (row.get("left") or {}).get("collapsed")
+        ]
+        content = [
+            ((row.get("left") or {}).get("page"), (row.get("right") or {}).get("page"))
+            for row in result["rows"]
+            if not (row.get("left") or {}).get("collapsed")
+        ]
+        # Номера страниц не перенумеровываются: диапазоны и строки показывают
+        # нумерацию своих документов
+        assert collapsed == [[1, 1], [3, 3]]
+        assert content == [(2, None), (None, 2)]
+        assert result["identical"] is False

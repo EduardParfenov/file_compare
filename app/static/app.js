@@ -567,8 +567,11 @@ function renderResult(result) {
     els.contentRight.innerHTML = "";
     const rows = result.rows;
 
-    if (result.pages && !result.pages.unchanged.length
-        && !result.pages.degraded_pages.length) {
+    // Признак полного совпадения вычисляет сервер: он видит и различия по
+    // тексту, и различия по изображению, и состояние страниц. По составу
+    // страниц совпадение не выводится — у различающихся документов
+    // неизменённых страниц как раз нет.
+    if (result.identical) {
         els.contentLeft.appendChild(identicalNotice());
         els.contentRight.appendChild(identicalNotice());
         els.diff.hidden = false;

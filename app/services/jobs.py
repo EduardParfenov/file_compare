@@ -119,6 +119,9 @@ def run_pipeline(
         rows = _build_rows(
             conversion["blocks1"], conversion["blocks2"], fragments, labels
         )
+        identical = conversion["is_pdf"] and _documents_identical(
+            rows, fragments, conversion
+        )
         rows = _group_by_page(rows, conversion)
 
         result = {
@@ -127,6 +130,7 @@ def run_pipeline(
             "rows": rows,
         }
         if conversion["is_pdf"]:
+            result["identical"] = identical
             result["pages"] = _page_summary(conversion)
             result["crops"] = conversion["crops"]
             result["crops_truncated"] = conversion["crops_truncated"]
@@ -310,7 +314,6 @@ def _unreadable_row(page: int) -> dict:
     return {"left": dict(side), "right": dict(side)}
 
 
-
 def _page_summary(conversion: dict) -> dict:
     """Сведения о страницах для интерфейса: свёрнутые диапазоны, кропы."""
     return {
@@ -322,6 +325,58 @@ def _page_summary(conversion: dict) -> dict:
             "right": conversion["page_count2"],
         },
     }
+
+
+def _documents_identical(
+    rows: list[dict], fragments: list[dict], conversion: dict
+) -> bool:
+    """Признак полного совпадения документов.
+
+    Истина, когда различий нет ни по тексту, ни по изображению и ни одна
+    страница не осталась непрочитанной или деградировавшей: неизвестность —
+    не совпадение (spec: comparison-jobs). Признак `degraded` уже несёт
+    сведения и о деградировавших, и о непрочитанных страницах.
+
+    Считается по строкам до вставки маркеров свёрнутых диапазонов: они
+    не содержат сведений о различиях.
+    """
+    return (
+        not fragments
+        and not conversion["degraded"]
+        and not _pages_differ(conversion)
+        and not _has_image_difference(rows)
+    )
+
+
+def _pages_differ(conversion: dict) -> bool:
+    """Визуальное различие страниц по выравниванию двух документов.
+
+    Различие в тексте страницы читатель может и не увидеть (сканы читаются
+    неидеально, ветка текстового слоя страницы вообще не сравнивает), но
+    различие картинок страницы уже измерено — совпадением его считать
+    нельзя (spec: comparison-jobs).
+    """
+    alignment = conversion["alignment"]
+    return bool(
+        alignment and (alignment.pairs or alignment.only_old or alignment.only_new)
+    )
+
+
+def _has_image_difference(rows: list[dict]) -> bool:
+    """Различие по изображению при совпавшем тексте.
+
+    Текстовый diff картинки не видит, поэтому замена изображения отмечается
+    либо флагом `images_changed` на парной строке, либо односторонней
+    строкой с картинкой — под-строкой изображений из `_image_subrows`.
+    """
+    for row in rows:
+        left = row.get("left")
+        right = row.get("right")
+        if (left or {}).get("images_changed") or (right or {}).get("images_changed"):
+            return True
+        if (left is None) != (right is None) and (left or right or {}).get("images"):
+            return True
+    return False
 
 
 def _side_change(label: str, side: str) -> str | None:
