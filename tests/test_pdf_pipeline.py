@@ -41,10 +41,9 @@ class StubChat:
 def app(tmp_path):
     from app import create_app
 
-    application = create_app(
+    return create_app(
         {"TESTING": True, "UPLOAD_DIR": str(tmp_path / "u"), "JOBS_SYNCHRONOUS": True}
     )
-    return application
 
 
 def run(app, path1, path2, chat=None):

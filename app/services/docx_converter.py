@@ -122,7 +122,11 @@ def _paragraph_images(paragraph: Paragraph, budget: list[int]) -> list[dict]:
                 continue  # лимит исчерпан: хвост изображений отбрасывается
             budget[0] -= len(blob)
             images.append(
-                {"data_uri": data_uri, "sha1": hashlib.sha1(blob).hexdigest()}
+                {
+                    "data_uri": data_uri,
+                    # ключ дедупликации содержимого, не криптография
+                    "sha1": hashlib.sha1(blob).hexdigest(),  # noqa: S324
+                }
             )
     return images
 
@@ -242,7 +246,7 @@ def convert_docx(path: str, max_images_bytes: int | None = None) -> list[dict]:
         max_images_bytes = DEFAULT_MAX_IMAGES_BYTES
     try:
         document = Document(path)
-    except Exception as exc:  # noqa: BLE001 — причина скрыта за своим типом
+    except Exception as exc:
         raise ConversionError(f"Не удалось прочитать DOCX: {exc}") from exc
 
     budget = [max_images_bytes]  # mutable, общий на документ

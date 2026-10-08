@@ -43,7 +43,7 @@ class ConversionError(Exception):
 def _open(path: str):
     try:
         return pdfplumber.open(path)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise ConversionError(f"Не удалось открыть PDF: {exc}") from exc
 
 
@@ -220,7 +220,7 @@ def _embedded_images(page, budget: list[int]) -> list[dict]:
             {
                 "data_uri": "data:image/png;base64,"
                 + base64.b64encode(blob).decode("ascii"),
-                "sha1": hashlib.sha1(blob).hexdigest(),
+                "sha1": hashlib.sha1(blob).hexdigest(),  # noqa: S324 — ключ дедупликации
             }
         )
     return images

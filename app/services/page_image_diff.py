@@ -151,7 +151,7 @@ class PageAlignment:
 def _open_document(path: str) -> pdfium.PdfDocument:
     try:
         return pdfium.PdfDocument(path)
-    except Exception as exc:  # noqa: BLE001 — причина скрыта за своим типом
+    except Exception as exc:
         raise PageRenderError(f"Не удалось открыть PDF: {exc}") from exc
 
 
@@ -176,7 +176,7 @@ def render_page(path: str, index: int, dpi: int = DEFAULT_DPI) -> Image.Image:
             page = document[index]
             bitmap = page.render(scale=scale)
             image = bitmap.to_pil().convert("L")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise PageRenderError(
                 f"Не удалось отрисовать страницу {index + 1}: {exc}"
             ) from exc
@@ -188,7 +188,8 @@ def render_page(path: str, index: int, dpi: int = DEFAULT_DPI) -> Image.Image:
 def _sha1(image: Image.Image) -> str:
     buffer = io.BytesIO()
     image.save(buffer, format="PNG", optimize=False)
-    return hashlib.sha1(buffer.getvalue()).hexdigest()
+    # отпечаток страницы для сравнения, не криптография
+    return hashlib.sha1(buffer.getvalue()).hexdigest()  # noqa: S324
 
 
 # --------------------------------------------------------------------------
@@ -556,7 +557,7 @@ def crops_for_pair(old: Page, new: Page, limit_bytes: int) -> tuple[list[str], b
     crops: list[str] = []
     total = 0
     truncated = False
-    for area, data_uri in encoded:
+    for _, data_uri in encoded:
         size = len(data_uri)
         if total + size > limit_bytes:
             truncated = True

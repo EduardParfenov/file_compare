@@ -10,6 +10,7 @@
 
 import hashlib
 import sys
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -50,7 +51,7 @@ class StubChat:
             for part in messages[1].content
             if part["type"] == "image_url"
         )
-        digest = hashlib.sha1(url.encode()).hexdigest()[:6]
+        digest = hashlib.sha1(url.encode()).hexdigest()[:6]  # noqa: S324 — имя файла
         return (
             f"# Страница\n\n"
             f"Абзац страницы содержит текст для сравнения.\n\n"
@@ -85,8 +86,7 @@ def upload(client, path: Path) -> str:
 
 
 def main() -> int:
-    tmp = Path("/tmp/opencode/manual-scan-check")
-    tmp.mkdir(parents=True, exist_ok=True)
+    tmp = Path(tempfile.mkdtemp(prefix="manual-scan-check-"))
 
     # Файл 1: четыре страницы. Файл 2: те же страницы, но вторая изменена.
     file1 = write_scan_pdf(

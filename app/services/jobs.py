@@ -245,7 +245,7 @@ def _group_by_page(rows: list[dict], conversion: dict) -> list[dict]:
 
     with_ranges: list[dict] = []
     used = 0
-    for index, row in enumerate(rows):
+    for row in rows:
         page = _row_page(row)
         while used < len(markers) and page is not None and markers[used]["page"] < page:
             with_ranges.append(_marker_row(markers[used]))
@@ -536,7 +536,7 @@ def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
             emit_paired(old, new, _row_side(old, None), _row_side(new, None))
         pos1, pos2 = end1, end2
 
-    for frag, label in zip(fragments, labels):
+    for frag, label in zip(fragments, labels, strict=True):
         (i1, i2), (j1, j2) = frag["old_range"], frag["new_range"]
         emit_equal(i1, j1)
         old = blocks1[i1:i2]

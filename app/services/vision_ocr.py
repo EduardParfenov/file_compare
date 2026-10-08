@@ -58,7 +58,8 @@ _CACHE_LOCK = threading.Lock()
 
 def cache_key(image_bytes: bytes, model: str, prompt_version: str) -> str:
     """Ключ кэша: содержимое страницы + модель + версия инструкции."""
-    return f"{hashlib.sha1(image_bytes).hexdigest()}:{model}:{prompt_version}"
+    # ключ кэша по содержимому страницы, не криптография
+    return f"{hashlib.sha1(image_bytes).hexdigest()}:{model}:{prompt_version}"  # noqa: S324
 
 
 def clear_cache() -> None:

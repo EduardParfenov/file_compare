@@ -8,6 +8,7 @@
 
 import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -52,8 +53,7 @@ def main() -> int:
     )
     chat = create_chat_model(app.config, timeout=300)
 
-    tmp = Path("/tmp/opencode/real-model-check")
-    tmp.mkdir(parents=True, exist_ok=True)
+    tmp = Path(tempfile.mkdtemp(prefix="real-model-check-"))
     file1 = write_scan_pdf(
         tmp / "v1.pdf", [[(40, 330, PAGE_TEXT[i])] for i in (1, 2, 3)]
     )
