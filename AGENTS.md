@@ -33,10 +33,12 @@
 
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt -r requirements-dev.txt
 cp .env.example .env   # при необходимости отредактировать
 flask run              # http://127.0.0.1:5000
 pytest                 # все тесты; LLM замокана
+ruff format .          # форматирование
+ruff check .           # линтер; правила заданы в pyproject.toml
 ```
 
 ## Конвенции
@@ -48,7 +50,10 @@ pytest                 # все тесты; LLM замокана
 - Список разрешённых расширений — через `ALLOWED_EXTENSIONS` (строка,
   значения через запятую, например `.docx,.xlsx,.pdf`).
 - Язык: английские идентификаторы; допустимы русские docstring и тексты UI.
-- Перед коммитом прогонять `pytest`.
+- Перед коммитом прогонять `pytest`, `ruff format .` и `ruff check .`.
+- Настройки ruff хранятся в `pyproject.toml`: правка правил — с изменением
+  конфига, а не с `# noqa` по месту; `noqa` допустим только с пояснением
+  причины.
 
 ## Правила безопасности
 
@@ -77,7 +82,7 @@ pytest                 # все тесты; LLM замокана
 - `README.md` — установка, запуск, API-эндпоинты, принцип работы.
 - `REVIEW.md` — рецензия: покрытие тестами, расхождения спек и кода;
   при изменении поведения актуализировать.
-- `openspec/specs/` — спецификации возможностей (comparison-jobs,
-  continuous-integration, diff-viewer, document-diff, file-upload,
-  llm-classification, markdown-conversion, project-version,
-  release-process).
+- `openspec/specs/` — спецификации возможностей (application-logging,
+  comparison-jobs, continuous-integration, diff-viewer, document-diff,
+  file-upload, llm-classification, markdown-conversion, page-image-diff,
+  pdf-conversion, project-version, release-process, vision-ocr).
