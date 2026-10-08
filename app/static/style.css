@@ -406,3 +406,88 @@ p {
     font-size: 12px;
     color: #888;
 }
+
+/* Номер страницы блока: подпись строки, не часть текста документа */
+.page-badge {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 0 6px;
+    border: 1px solid #b9c2cc;
+    border-radius: 3px;
+    background: #eef1f4;
+    color: #5a6672;
+    font-size: 11px;
+    line-height: 16px;
+    vertical-align: middle;
+}
+
+/* Свёрнутый диапазон совпавших страниц */
+.collapsed-range {
+    padding: 6px 10px;
+    background: #f4f6f8;
+    border-top: 1px dashed #c9d2da;
+    border-bottom: 1px dashed #c9d2da;
+}
+
+.collapsed-label {
+    border: 0;
+    background: none;
+    color: #5a6672;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 0;
+}
+
+.collapsed-label:hover { color: #2b3947; text-decoration: underline; }
+
+/* Кроп визуально изменённой области страницы */
+.region-crop {
+    display: block;
+    max-width: 100%;
+    margin: 6px 0;
+    border: 2px solid #d1483f;
+    border-radius: 2px;
+}
+
+/* Документы совпадают полностью */
+.identical-notice {
+    padding: 12px;
+    color: #2f7d4f;
+    background: #eef7f1;
+    border: 1px solid #bcdfc9;
+    border-radius: 3px;
+    font-size: 13px;
+}
+
+/* Прогресс по страницам при постраничной обработке */
+.progress-note {
+    padding: 4px 2px;
+    color: #5a6672;
+    font-size: 12px;
+}
+
+/* Страница, которую не удалось прочитать: заметная, а не пустая */
+.unreadable-page {
+    padding: 8px 10px;
+    color: #8a5a00;
+    background: #fdf6e6;
+    border: 1px dashed #d8b96a;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+/* Раскрытая страница внутри свёрнутого диапазона: различий в ней нет,
+   поэтому подсветки нет — только текст и номер страницы */
+.expanded-page {
+    padding: 4px 10px;
+    border-left: 2px solid #dfe5ea;
+}
+
+.collapsed-label.expanded::before {
+    content: "▾ ";
+}
+
+.collapsed-label:not(.expanded)::before {
+    content: "▸ ";
+}
