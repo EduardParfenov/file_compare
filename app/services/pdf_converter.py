@@ -285,7 +285,9 @@ def _heading_tag(text: str) -> str:
     return "p"
 
 
-def convert_pdf_text_layer(path: str, max_images_bytes: int | None = None) -> list[dict]:
+def convert_pdf_text_layer(
+    path: str, max_images_bytes: int | None = None
+) -> list[dict]:
     """Ветка текстового слоя: абзацы, строки таблиц, изображения, координаты.
 
     Детерминирована и не обращается к моделям.

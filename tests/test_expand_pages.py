@@ -7,9 +7,9 @@ import pytest
 from docx import Document
 
 sys.path.insert(0, str(Path(__file__).parent))
-from pdf_fixtures import write_scan_pdf  # noqa: E402
+from pdf_fixtures import write_scan_pdf
 
-from app.services import conversion, jobs  # noqa: E402
+from app.services import conversion, jobs
 
 
 @pytest.fixture()
@@ -67,12 +67,19 @@ class TestExpandEndpointValidation:
     def test_requires_side_and_range(self, client, tmp_path, app):
         job_id = _finished_job(tmp_path, client, app)
         assert client.post(f"/api/jobs/{job_id}/pages", json={}).status_code == 400
-        assert client.post(
-            f"/api/jobs/{job_id}/pages", json={"side": "left", "first": 1}
-        ).status_code == 400
-        assert client.post(
-            f"/api/jobs/{job_id}/pages", json={"side": "middle", "first": 1, "last": 1}
-        ).status_code == 400
+        assert (
+            client.post(
+                f"/api/jobs/{job_id}/pages", json={"side": "left", "first": 1}
+            ).status_code
+            == 400
+        )
+        assert (
+            client.post(
+                f"/api/jobs/{job_id}/pages",
+                json={"side": "middle", "first": 1, "last": 1},
+            ).status_code
+            == 400
+        )
 
     def test_rejects_backwards_range(self, client, tmp_path, app):
         job_id = _finished_job(tmp_path, client, app)
@@ -122,9 +129,7 @@ def _finished_job(tmp_path, client, app) -> str:
 class TestExpandSuccess:
     def test_returns_blocks_for_range(self, client, tmp_path, app, monkeypatch):
         job_id = _finished_job(tmp_path, client, app)
-        monkeypatch.setattr(
-            "app.routes._reading_role_chat", lambda: _stub_chat()
-        )
+        monkeypatch.setattr("app.routes._reading_role_chat", lambda: _stub_chat())
         response = client.post(
             f"/api/jobs/{job_id}/pages",
             json={"side": "left", "first": 1, "last": 2},
@@ -137,9 +142,7 @@ class TestExpandSuccess:
 
     def test_blocks_carry_text_and_html(self, client, tmp_path, app, monkeypatch):
         job_id = _finished_job(tmp_path, client, app)
-        monkeypatch.setattr(
-            "app.routes._reading_role_chat", lambda: _stub_chat()
-        )
+        monkeypatch.setattr("app.routes._reading_role_chat", lambda: _stub_chat())
         body = client.post(
             f"/api/jobs/{job_id}/pages",
             json={"side": "left", "first": 1, "last": 1},
@@ -150,9 +153,7 @@ class TestExpandSuccess:
 
     def test_read_failure_returns_409(self, client, tmp_path, app, monkeypatch):
         job_id = _finished_job(tmp_path, client, app)
-        monkeypatch.setattr(
-            "app.routes._reading_role_chat", lambda: _failing_chat()
-        )
+        monkeypatch.setattr("app.routes._reading_role_chat", lambda: _failing_chat())
         response = client.post(
             f"/api/jobs/{job_id}/pages",
             json={"side": "left", "first": 1, "last": 2},

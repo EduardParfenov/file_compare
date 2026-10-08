@@ -242,7 +242,7 @@ def convert_docx(path: str, max_images_bytes: int | None = None) -> list[dict]:
         max_images_bytes = DEFAULT_MAX_IMAGES_BYTES
     try:
         document = Document(path)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — причина скрыта за своим типом
         raise ConversionError(f"Не удалось прочитать DOCX: {exc}") from exc
 
     budget = [max_images_bytes]  # mutable, общий на документ

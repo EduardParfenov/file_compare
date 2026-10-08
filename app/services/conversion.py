@@ -67,9 +67,7 @@ def _convert_pdf(path: str, max_images_bytes: int | None, vision_chat):
 
     pages = page_image_diff.load_pages(path)
     images = {page.number: page.image for page in pages}
-    return pdf_converter.convert_pdf_by_reading(
-        path, _reader_for(vision_chat), images
-    )
+    return pdf_converter.convert_pdf_by_reading(path, _reader_for(vision_chat), images)
 
 
 def convert_pdf_pair(
@@ -94,8 +92,12 @@ def convert_pdf_pair(
 
     if pdf_converter.has_text_layer(path1) and pdf_converter.has_text_layer(path2):
         return _pdf_pair_with_text_layer(
-            path1, path2, max_images_bytes, crops_max_bytes,
-            page_image_diff, pdf_converter,
+            path1,
+            path2,
+            max_images_bytes,
+            crops_max_bytes,
+            page_image_diff,
+            pdf_converter,
         )
 
     old_pages = page_image_diff.load_pages(path1)
@@ -108,16 +110,10 @@ def convert_pdf_pair(
     reader = _progress_reader(base_reader, len(pages_old) + len(pages_new), job_id)
 
     degraded: set[int] = set()
-    blocks1 = _side_blocks(
-        pdf_converter, path1, reader, old_pages, pages_old, degraded
-    )
-    blocks2 = _side_blocks(
-        pdf_converter, path2, reader, new_pages, pages_new, degraded
-    )
+    blocks1 = _side_blocks(pdf_converter, path1, reader, old_pages, pages_old, degraded)
+    blocks2 = _side_blocks(pdf_converter, path2, reader, new_pages, pages_new, degraded)
 
-    crops, truncated = _collect_crops(
-        old_pages, new_pages, alignment, crops_max_bytes
-    )
+    crops, truncated = _collect_crops(old_pages, new_pages, alignment, crops_max_bytes)
 
     # Подлежавшие чтению, но не прочитанные страницы нельзя считать ни
     # совпавшими, ни просто пустыми: это потеря правки, и она должна быть
@@ -232,9 +228,7 @@ def _pdf_pair_with_text_layer(
     old_pages = page_image_diff.load_pages(path1)
     new_pages = page_image_diff.load_pages(path2)
     alignment = page_image_diff.align_pages(old_pages, new_pages)
-    crops, truncated = _collect_crops(
-        old_pages, new_pages, alignment, crops_max_bytes
-    )
+    crops, truncated = _collect_crops(old_pages, new_pages, alignment, crops_max_bytes)
     # Текст совпавших страниц не участвует в сравнении — так же, как в ветке
     # чтения моделью, где такие страницы не читаются вовсе. Иначе страница
     # показывается дважды: своим содержимым и свёрнутым диапазоном

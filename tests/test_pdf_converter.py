@@ -11,11 +11,11 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
-from pdf_fixtures import write_scan_pdf, write_text_pdf  # noqa: E402
+from pdf_fixtures import write_scan_pdf, write_text_pdf
 
-from app.services import pdf_converter as pc  # noqa: E402
-from app.services.vision_ocr import PageReadResult  # noqa: E402
-from app.services.diffing import is_table_row, parse_table_row  # noqa: E402
+from app.services import pdf_converter as pc
+from app.services.diffing import is_table_row, parse_table_row
+from app.services.vision_ocr import PageReadResult
 
 
 def _plain_html(fragment: str) -> str:
@@ -85,7 +85,11 @@ class TestTextLayerBlocks:
         path = write_text_pdf(
             tmp_path / "t.pdf",
             [
-                [(30, 340, "Report"), (30, 300, "First paragraph line"), (30, 286, "second paragraph line")],
+                [
+                    (30, 340, "Report"),
+                    (30, 300, "First paragraph line"),
+                    (30, 286, "second paragraph line"),
+                ],
                 [(30, 340, "Second page content")],
             ],
         )
@@ -105,17 +109,22 @@ class TestTextLayerBlocks:
         path = write_text_pdf(tmp_path / "t.pdf", [[(30, 300, "one two three")]])
         block = pc.convert_pdf_text_layer(path)[0]
         assert len(block["words"]) == 3
-        assert all({"x0", "top", "x1", "bottom"} <= set(word) for word in block["words"])
+        assert all(
+            {"x0", "top", "x1", "bottom"} <= set(word) for word in block["words"]
+        )
 
     def test_html_text_invariant(self, tmp_path):
-        import re
 
-        path = write_text_pdf(tmp_path / "t.pdf", [[(30, 300, "Text <b>raw</b> & more")]])
+        path = write_text_pdf(
+            tmp_path / "t.pdf", [[(30, 300, "Text <b>raw</b> & more")]]
+        )
         block = pc.convert_pdf_text_layer(path)[0]
         assert _plain_html(block["html"]) == block["text"]
 
     def test_deterministic(self, tmp_path):
-        path = write_text_pdf(tmp_path / "t.pdf", [[(30, 300, "Report")], [(30, 300, "Second")]])
+        path = write_text_pdf(
+            tmp_path / "t.pdf", [[(30, 300, "Report")], [(30, 300, "Second")]]
+        )
         assert pc.convert_pdf_text_layer(path) == pc.convert_pdf_text_layer(path)
 
 
@@ -164,7 +173,6 @@ class TestHtmlInvariant:
         assert block["html"] == "<td>a</td><td>b</td>"
 
     def test_markup_in_text_is_escaped(self):
-        import re
 
         block = pc.build_block("<script>x</script>", "p")
         assert "<script>" not in block["html"]
@@ -202,7 +210,9 @@ class TestScanBranch:
     def test_empty_answer_gives_no_blocks_and_flag(self):
         reader = StubReader({1: "  "})
         degraded: set[int] = set()
-        blocks = pc.convert_pdf_by_reading("scan.pdf", reader, images(1), degraded_pages=degraded)
+        blocks = pc.convert_pdf_by_reading(
+            "scan.pdf", reader, images(1), degraded_pages=degraded
+        )
         assert blocks == []
         assert degraded == {1}
 

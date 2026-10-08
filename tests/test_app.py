@@ -5,11 +5,11 @@ import pytest
 from docx import Document
 
 sys.path.insert(0, str(Path(__file__).parent))
-from pdf_fixtures import write_scan_pdf  # noqa: E402
+from pdf_fixtures import write_scan_pdf
 
-import app as app_module  # noqa: E402
-from app import create_app  # noqa: E402
-from app.services.conversion import convert_document  # noqa: E402
+import app as app_module
+from app import create_app
+from app.services.conversion import convert_document
 
 
 @pytest.fixture()
@@ -151,9 +151,8 @@ class TestMissingModelNameOnReading:
 
         app = create_app({"TESTING": True, "UPLOAD_DIR": str(tmp_path / "u")})
         app.config["LLM_MODEL"] = ""
-        with app.app_context():
-            with pytest.raises(ValueError, match="LLM_MODEL"):
-                vision_ocr.create_reader(app.config)
+        with app.app_context(), pytest.raises(ValueError, match="LLM_MODEL"):
+            vision_ocr.create_reader(app.config)
 
     def test_docx_pipeline_survives_empty_model_name(self, tmp_path):
         from docx import Document

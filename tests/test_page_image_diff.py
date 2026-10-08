@@ -8,9 +8,9 @@ import pytest
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent))
-from pdf_fixtures import write_scan_pdf  # noqa: E402
+from pdf_fixtures import write_scan_pdf
 
-from app.services import page_image_diff as pid  # noqa: E402
+from app.services import page_image_diff as pid
 
 DPI = 200
 
@@ -77,7 +77,9 @@ class TestPreprocess:
 
     def test_tilt_is_corrected(self, tmp_path):
         """Скан, повёрнутый на 1 градус, после предобработки выровнен."""
-        raw = np.array(pid.render_page(scan(tmp_path, "s.pdf", ["Skew test line"]), 0, dpi=DPI))
+        raw = np.array(
+            pid.render_page(scan(tmp_path, "s.pdf", ["Skew test line"]), 0, dpi=DPI)
+        )
         tilted = pid.rotate_image(
             raw, 1.0, order=1, mode="constant", cval=255, preserve_range=True
         ).astype(np.uint8)
@@ -86,7 +88,9 @@ class TestPreprocess:
         )
 
     def test_estimation_recovers_angle(self, tmp_path):
-        raw = np.array(pid.render_page(scan(tmp_path, "s.pdf", ["Angle recovery"]), 0, dpi=DPI))
+        raw = np.array(
+            pid.render_page(scan(tmp_path, "s.pdf", ["Angle recovery"]), 0, dpi=DPI)
+        )
         binary = raw < 128
         for angle in (0.5, 1.0, -1.0):
             rotated = (
@@ -119,12 +123,18 @@ class TestThreshold:
         assert pid.pages_equal(first, second) is True
 
     def test_single_changed_digit_counts_as_changed(self, tmp_path):
-        old = pid.preprocess(pid.render_page(scan(tmp_path, "a.pdf", ["Item 1001 sold"]), 0, dpi=DPI))
-        new = pid.preprocess(pid.render_page(scan(tmp_path, "b.pdf", ["Item 1002 sold"]), 0, dpi=DPI))
+        old = pid.preprocess(
+            pid.render_page(scan(tmp_path, "a.pdf", ["Item 1001 sold"]), 0, dpi=DPI)
+        )
+        new = pid.preprocess(
+            pid.render_page(scan(tmp_path, "b.pdf", ["Item 1002 sold"]), 0, dpi=DPI)
+        )
         assert pid.pages_equal(page_from(old), page_from(new)) is False
 
     def test_identical_images_equal(self, tmp_path):
-        image = pid.preprocess(pid.render_page(scan(tmp_path, "s.pdf", ["A"]), 0, dpi=DPI))
+        image = pid.preprocess(
+            pid.render_page(scan(tmp_path, "s.pdf", ["A"]), 0, dpi=DPI)
+        )
         assert pid.pages_equal(page_from(image), page_from(image.copy())) is True
 
 
@@ -195,17 +205,25 @@ class TestAlignPages:
 
 class TestCrops:
     def pair(self, tmp_path, old_text, new_text):
-        old = pid.preprocess(pid.render_page(scan(tmp_path, "a.pdf", [old_text]), 0, dpi=DPI))
-        new = pid.preprocess(pid.render_page(scan(tmp_path, "b.pdf", [new_text]), 0, dpi=DPI))
+        old = pid.preprocess(
+            pid.render_page(scan(tmp_path, "a.pdf", [old_text]), 0, dpi=DPI)
+        )
+        new = pid.preprocess(
+            pid.render_page(scan(tmp_path, "b.pdf", [new_text]), 0, dpi=DPI)
+        )
         return page_from(old), page_from(new)
 
     def test_crop_covers_changed_area(self, tmp_path):
-        boxes = pid.changed_regions(*self.pair(tmp_path, "Item 1001 sold", "Item 1002 sold"))
+        boxes = pid.changed_regions(
+            *self.pair(tmp_path, "Item 1001 sold", "Item 1002 sold")
+        )
         assert boxes, "изменённая область должна быть найдена"
         assert all(x1 > x0 and y1 > y0 for x0, y0, x1, y1 in boxes)
 
     def test_no_crops_for_identical_pages(self, tmp_path):
-        image = pid.preprocess(pid.render_page(scan(tmp_path, "s.pdf", ["A"]), 0, dpi=DPI))
+        image = pid.preprocess(
+            pid.render_page(scan(tmp_path, "s.pdf", ["A"]), 0, dpi=DPI)
+        )
         assert pid.changed_regions(page_from(image), page_from(image.copy())) == []
 
     def test_regions_are_large_enough(self, tmp_path):
@@ -218,7 +236,8 @@ class TestCrops:
 
     def test_crops_are_data_uri(self, tmp_path):
         crops, truncated = pid.crops_for_pair(
-            *self.pair(tmp_path, "Item 1001 sold", "Item 1002 sold"), limit_bytes=1024 * 1024
+            *self.pair(tmp_path, "Item 1001 sold", "Item 1002 sold"),
+            limit_bytes=1024 * 1024,
         )
         assert crops
         assert all(crop.startswith("data:image/jpeg;base64,") for crop in crops)

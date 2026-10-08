@@ -12,22 +12,22 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from pdf_fixtures import write_scan_pdf  # noqa: E402
+from pdf_fixtures import write_scan_pdf
 
-from app import create_app  # noqa: E402
-from app.services import page_image_diff, vision_ocr  # noqa: E402
-from app.services.llm import create_chat_model  # noqa: E402
+from app import create_app
+from app.services import page_image_diff, vision_ocr
+from app.services.llm import create_chat_model
 
 PAGE_TEXT = {
     1: "Contract of supply\n"
-       "The term of delivery is thirty days from the date of signing.\n"
-       "The price of the goods is 100000 rubles.",
+    "The term of delivery is thirty days from the date of signing.\n"
+    "The price of the goods is 100000 rubles.",
     2: "Article 2. Payment\n"
-       "Payment is made within ten banking days from the invoice date.\n"
-       "A penalty of 0.1 percent is charged for each day of delay.",
+    "Payment is made within ten banking days from the invoice date.\n"
+    "A penalty of 0.1 percent is charged for each day of delay.",
     3: "Article 3. Liability\n"
-       "Neither party is liable for force majeure circumstances.\n"
-       "Claims are submitted in writing within thirty days.",
+    "Neither party is liable for force majeure circumstances.\n"
+    "Claims are submitted in writing within thirty days.",
 }
 
 
@@ -73,9 +73,7 @@ def main() -> int:
     )
 
     pages = page_image_diff.load_pages(file1)
-    alignment = page_image_diff.align_pages(
-        pages, page_image_diff.load_pages(file2)
-    )
+    alignment = page_image_diff.align_pages(pages, page_image_diff.load_pages(file2))
     print(f"Страниц: {len(pages)}")
     print(f"Совпали визуально: {alignment.identical}")
     print(f"Изменённые пары: {[(p.old, p.new) for p in alignment.pairs]}")
@@ -101,9 +99,7 @@ def main() -> int:
 
         from app.services.pdf_converter import convert_pdf_by_reading
 
-        blocks = convert_pdf_by_reading(
-            file1, reader, {2: pages[1].image}
-        )
+        blocks = convert_pdf_by_reading(file1, reader, {2: pages[1].image})
         print(f"\nБлоков из markdown модели: {len(blocks)}")
         for block in blocks:
             print(f"  {block['text'][:70]!r} page={block.get('page')}")

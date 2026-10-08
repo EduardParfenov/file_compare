@@ -47,9 +47,7 @@ def _assemble(objects: dict[int, bytes], root: int, info: int = 0) -> bytes:
     return out.getvalue()
 
 
-def write_text_pdf(
-    path, pages: list[list[tuple[float, float, str]]]
-) -> str:
+def write_text_pdf(path, pages: list[list[tuple[float, float, str]]]) -> str:
     """PDF с текстовым слоем: список страниц, на каждой список (x, y, текст)."""
     objects: dict[int, bytes] = {}
     page_ids = [3 + 2 * index for index in range(len(pages))]
@@ -126,9 +124,7 @@ def write_scan_pdf(path, pages: list[list[tuple[float, float, str]]]) -> str:
             + jpeg
             + b"\nendstream"
         )
-        ops = (
-            f"q {PAGE_WIDTH} 0 0 {PAGE_HEIGHT} 0 0 cm /Im0 Do Q"
-        )
+        ops = f"q {PAGE_WIDTH} 0 0 {PAGE_HEIGHT} 0 0 cm /Im0 Do Q"
         stream = _content_stream(ops)
         objects[pid] = (
             f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {PAGE_WIDTH} {PAGE_HEIGHT}] "

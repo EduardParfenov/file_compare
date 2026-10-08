@@ -268,7 +268,11 @@ def _page_markers(conversion: dict) -> list[dict]:
 
     markers: list[dict] = []
     for page in unchanged:
-        if markers and not markers[-1]["unreadable"] and markers[-1]["last"] == page - 1:
+        if (
+            markers
+            and not markers[-1]["unreadable"]
+            and markers[-1]["last"] == page - 1
+        ):
             markers[-1]["last"] = page
         else:
             markers.append({"page": page, "last": page, "unreadable": False})
@@ -297,7 +301,13 @@ def _row_page(row: dict) -> int | None:
 def _collapsed_row(first: int, last: int) -> dict:
     """Свёрнутый диапазон совпавших страниц."""
     collapsed = [first, last]
-    side = {"text": "", "change": None, "html": "", "images": [], "collapsed": collapsed}
+    side = {
+        "text": "",
+        "change": None,
+        "html": "",
+        "images": [],
+        "collapsed": collapsed,
+    }
     return {"left": dict(side), "right": dict(side)}
 
 

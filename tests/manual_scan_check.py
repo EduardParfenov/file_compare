@@ -9,16 +9,15 @@
 """
 
 import hashlib
-import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).parent))
-from pdf_fixtures import write_scan_pdf  # noqa: E402
+from pdf_fixtures import write_scan_pdf
 
-from app import create_app  # noqa: E402
-from app.services import conversion, jobs, vision_ocr  # noqa: E402
+from app import create_app
+from app.services import conversion, jobs, vision_ocr
 
 FAILURES: list[str] = []
 
@@ -153,7 +152,9 @@ def main() -> int:
     unchanged = {tuple(pair) for pair in pages["unchanged"]}
     check((1, 1) in unchanged, "неизменённая страница 1 помечена совпавшей")
     check((2, 2) not in unchanged, "изменённая страница 2 не помечена совпавшей")
-    check((3, 3) in unchanged and (4, 4) in unchanged, "страницы 3–4 помечены совпавшими")
+    check(
+        (3, 3) in unchanged and (4, 4) in unchanged, "страницы 3–4 помечены совпавшими"
+    )
 
     collapsed = [
         row["left"]["collapsed"]
@@ -165,12 +166,13 @@ def main() -> int:
         f"свёрнутые диапазоны корректны ({collapsed})",
     )
 
-    page_rows = [
-        row for row in rows if row.get("left") and row["left"].get("page")
-    ]
+    page_rows = [row for row in rows if row.get("left") and row["left"].get("page")]
     check(bool(page_rows), "строки содержат номер страницы")
     check(
-        all({"text", "change", "html", "images"} <= set(row["left"]) for row in page_rows),
+        all(
+            {"text", "change", "html", "images"} <= set(row["left"])
+            for row in page_rows
+        ),
         "стороны строк сохраняют прежний контракт (text/change/html/images)",
     )
 
@@ -200,11 +202,7 @@ def main() -> int:
 
     print("\n5. Раскрытие свёрнутого диапазона")
     range_row = next(
-        (
-            row
-            for row in rows
-            if row.get("right") and row["right"].get("collapsed")
-        ),
+        (row for row in rows if row.get("right") and row["right"].get("collapsed")),
         None,
     )
     check(range_row is not None, "в результате есть строка свёрнутого диапазона")

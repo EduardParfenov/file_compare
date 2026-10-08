@@ -12,7 +12,7 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from app.services import vision_ocr as vo  # noqa: E402
+from app.services import vision_ocr as vo
 
 
 class MockChat:
@@ -170,7 +170,7 @@ class TestReaderFactory:
         return app
 
     def test_uses_configured_model_and_timeout(self, tmp_path):
-        from app.services.llm import LLM_TIMEOUT, create_chat_model
+        from app.services.llm import LLM_TIMEOUT
 
         app = self._app(tmp_path, LLM_MODEL="qwen3-vl-8b", OCR_TIMEOUT=300)
         with app.app_context():

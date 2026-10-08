@@ -305,7 +305,9 @@ def diff_mask(old: Page, new: Page) -> np.ndarray:
     if a.shape != b.shape:
         height = min(a.shape[0], b.shape[0])
         width = min(a.shape[1], b.shape[1])
-        mask = np.zeros((max(a.shape[0], b.shape[0]), max(a.shape[1], b.shape[1])), dtype=bool)
+        mask = np.zeros(
+            (max(a.shape[0], b.shape[0]), max(a.shape[1], b.shape[1])), dtype=bool
+        )
         mask[:height, :width] = a[:height, :width] ^ b[:height, :width]
         mask[a.shape[0] :, :] |= True
         mask[:, b.shape[1] :] |= True
@@ -490,7 +492,9 @@ def changed_regions(old: Page, new: Page) -> list[tuple[int, int, int, int]]:
     return _merge_boxes(boxes)
 
 
-def _merge_boxes(boxes: list[tuple[int, int, int, int]]) -> list[tuple[int, int, int, int]]:
+def _merge_boxes(
+    boxes: list[tuple[int, int, int, int]],
+) -> list[tuple[int, int, int, int]]:
     """Объединить пересекающиеся и близкие прямоугольники."""
     merged: list[list[int]] = []
     for box in sorted(boxes, key=lambda b: -(b[2] - b[0]) * (b[3] - b[1])):
@@ -528,9 +532,7 @@ def encode_crop(image: Image.Image, box: tuple[int, int, int, int]) -> str:
     return f"data:image/jpeg;base64,{encoded}"
 
 
-def crops_for_pair(
-    old: Page, new: Page, limit_bytes: int
-) -> tuple[list[str], bool]:
+def crops_for_pair(old: Page, new: Page, limit_bytes: int) -> tuple[list[str], bool]:
     """Кропы изменённых областей пары страниц с ограничением объёма.
 
     Возвращает (кропы, признак усечения). При превышении лимита кропы

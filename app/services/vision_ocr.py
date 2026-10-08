@@ -8,10 +8,10 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import re
 import threading
-import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
@@ -208,9 +208,7 @@ def create_reader(config, chat=None):
 
     model = current_app.config["LLM_MODEL"]
     if not model:
-        raise ValueError(
-            "Не задано имя модели (LLM_MODEL): чтение страниц невозможно"
-        )
+        raise ValueError("Не задано имя модели (LLM_MODEL): чтение страниц невозможно")
     if chat is None:
         timeout = current_app.config.get("OCR_TIMEOUT")
         chat = create_chat_model(current_app.config, timeout=timeout)

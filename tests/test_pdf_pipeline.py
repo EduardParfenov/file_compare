@@ -12,9 +12,9 @@ import pytest
 from docx import Document
 
 sys.path.insert(0, str(Path(__file__).parent))
-from pdf_fixtures import write_scan_pdf, write_text_pdf  # noqa: E402
+from pdf_fixtures import write_scan_pdf, write_text_pdf
 
-from app.services import jobs  # noqa: E402
+from app.services import jobs
 
 
 def scan(tmp_path, name, texts):
@@ -135,7 +135,9 @@ class TestUnreadablePages:
         assert result["pages"]["unreadable"]["left"] == [2]
         assert result["pages"]["unreadable"]["right"] == [2]
 
-    def test_unreadable_page_not_rendered_as_collapsed(self, tmp_path, app, monkeypatch):
+    def test_unreadable_page_not_rendered_as_collapsed(
+        self, tmp_path, app, monkeypatch
+    ):
         path1 = scan(tmp_path, "a.pdf", ["A", "BROKEN one"])
         path2 = scan(tmp_path, "b.pdf", ["A", "BROKEN two"])
         with app.app_context():
@@ -236,7 +238,9 @@ class TestPageSummary:
         assert sorted(map(tuple, pages["unchanged"])) == [(1, 1), (2, 2)]
         assert pages["page_count"] == {"left": 2, "right": 2}
 
-    def test_changed_document_reports_single_unchanged_page(self, tmp_path, app, monkeypatch):
+    def test_changed_document_reports_single_unchanged_page(
+        self, tmp_path, app, monkeypatch
+    ):
         path1 = scan(tmp_path, "a.pdf", ["A", "B"])
         path2 = scan(tmp_path, "b.pdf", ["A", "CHANGED"])
         with app.app_context():
@@ -309,7 +313,9 @@ class TestCollapsedRanges:
         ]
         assert collapsed == [[1, 3]], collapsed
 
-    def test_no_collapsed_rows_without_unchanged_pages(self, tmp_path, app, monkeypatch):
+    def test_no_collapsed_rows_without_unchanged_pages(
+        self, tmp_path, app, monkeypatch
+    ):
         rows = self._rows(
             tmp_path, app, monkeypatch, ["one", "two"], ["CHANGED one", "CHANGED two"]
         )
