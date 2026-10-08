@@ -114,7 +114,6 @@ def main() -> int:
     # Сбой модели проверяется отдельно, через подмену заглушки ниже.
     original_reader = conversion._reader_for
     healthy_chat = StubChat()
-    chat = StubChat()
     jobs._JOBS.clear()
     conversion._reader_for = lambda chat: original_reader(healthy_chat)
 

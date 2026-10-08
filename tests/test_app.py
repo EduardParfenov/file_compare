@@ -105,9 +105,11 @@ class TestModelNameRequiredForReading:
         результата (spec: vision-ocr)."""
         scan = write_scan_pdf(tmp_path / "scan.pdf", [[(40, 300, "Page text")]])
         app = create_app({"TESTING": True, "UPLOAD_DIR": str(tmp_path / "u")})
-        with app.app_context():
-            with pytest.raises(ValueError, match="модель для чтения страниц"):
-                convert_document(str(scan), vision_chat=None)
+        with (
+            app.app_context(),
+            pytest.raises(ValueError, match="модель для чтения страниц"),
+        ):
+            convert_document(str(scan), vision_chat=None)
 
     def test_docx_conversion_unaffected(self, tmp_path):
         doc = Document()

@@ -58,7 +58,7 @@ def has_text_layer(path: str) -> bool:
             try:
                 if (page.extract_text() or "").strip():
                     return True
-            except Exception:  # noqa: BLE001 — повреждённая страница не решает вопрос
+            except Exception:  # noqa: BLE001, S112 — повреждённая страница не решает вопрос
                 continue
     return False
 
@@ -202,14 +202,14 @@ def _embedded_images(page, budget: list[int]) -> list[dict]:
                 )
             )
             data = cropped.to_image(resolution=72).original
-        except Exception:  # noqa: BLE001 — битое изображение не отменяет конвертацию
+        except Exception:  # noqa: BLE001, S112 — битое изображение не отменяет конвертацию
             continue
         import io
 
         buffer = io.BytesIO()
         try:
             data.save(buffer, format="PNG")
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001, S112 — нечем кодировать изображение
             continue
         blob = buffer.getvalue()
         if len(blob) > budget[0]:
