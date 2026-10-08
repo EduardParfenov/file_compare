@@ -5,7 +5,7 @@ import threading
 import uuid
 from itertools import zip_longest
 
-from app.services.conversion import convert_document
+from app.services.conversion import convert_document, convert_pdf_pair
 from app.services.diffing import (
     find_diffs,
     inline_diff,
@@ -33,8 +33,10 @@ def create_job() -> str:
         "status": "processing",  # processing | done | failed
         "stage": None,
         "stage_message": None,
+        "stage_progress": None,
         "result": None,
         "error": None,
+        "path_for_side": {},
     }
     return job_id
 
@@ -47,6 +49,21 @@ def set_stage(job_id: str, stage: str) -> None:
     job = _JOBS[job_id]
     job["stage"] = stage
     job["stage_message"] = STAGE_MESSAGES[stage]
+    job["stage_progress"] = None
+
+
+def set_progress(job_id: str, done: int, total: int) -> None:
+    """Прогресс постраничной обработки: сколько страниц из скольких.
+
+    Необязательная подробность: ключ этапа и сообщение не меняются, поэтому
+    существующий клиент продолжает работать как раньше.
+    """
+    job = _JOBS[job_id]
+    job["stage_progress"] = {"done": done, "total": total}
+
+
+def clear_progress(job_id: str) -> None:
+    _JOBS[job_id]["stage_progress"] = None
 
 
 def clear_jobs() -> None:
@@ -61,8 +78,14 @@ def start_job(
     chat,
     max_images_bytes: int | None = None,
     synchronous: bool = False,
+    path_for_side: dict[int, str] | None = None,
 ) -> None:
-    """Запускает пайплайн сравнения (в потоке либо синхронно для тестов)."""
+    """Запускает пайплайн сравнения (в потоке либо синхронно для тестов).
+
+    `path_for_side` сохраняет пути файлов в задаче: они нужны, чтобы позже
+    дочитать свёрнутые страницы по запросу пользователя.
+    """
+    _JOBS[job_id]["path_for_side"] = dict(path_for_side or {})
     if synchronous:
         run_pipeline(job_id, path1, path2, chat, max_images_bytes)
     else:
@@ -81,30 +104,289 @@ def run_pipeline(
     job = _JOBS[job_id]
     try:
         set_stage(job_id, "converting")
-        blocks1 = normalize_blocks(
-            convert_document(path1, max_images_bytes=max_images_bytes)
-        )
-        blocks2 = normalize_blocks(
-            convert_document(path2, max_images_bytes=max_images_bytes)
+        conversion = _normalize(
+            convert_pair(path1, path2, chat, max_images_bytes, job_id=job_id)
         )
 
         set_stage(job_id, "diffing")
-        texts1 = [block["text"] for block in blocks1]
-        texts2 = [block["text"] for block in blocks2]
+        texts1 = [block["text"] for block in conversion["blocks1"]]
+        texts2 = [block["text"] for block in conversion["blocks2"]]
         fragments = refine_fragments(find_diffs(texts1, texts2))
 
         set_stage(job_id, "llm")
         labels, semantic = classify_fragments(fragments, chat)
 
-        job["result"] = {
-            "semantic": semantic,
+        rows = _build_rows(
+            conversion["blocks1"], conversion["blocks2"], fragments, labels
+        )
+        identical = conversion["is_pdf"] and _documents_identical(
+            rows, fragments, conversion
+        )
+        rows = _group_by_page(rows, conversion)
+
+        result = {
+            "semantic": semantic and not conversion["degraded"],
             "fragments_count": len(fragments),
-            "rows": _build_rows(blocks1, blocks2, fragments, labels),
+            "rows": rows,
         }
+        if conversion["is_pdf"]:
+            result["identical"] = identical
+            result["pages"] = _page_summary(conversion)
+            result["crops"] = conversion["crops"]
+            result["crops_truncated"] = conversion["crops_truncated"]
+        job["result"] = result
         job["status"] = "done"
     except Exception as exc:  # noqa: BLE001 — пайплайн обязан завершиться статусом
         job["status"] = "failed"
         job["error"] = str(exc)
+
+
+class ConversionProgress:
+    """Обёртка над конвертацией: сообщает прогресс по страницам.
+
+    Читатель страниц вызывается по одной странице за раз, поэтому прогресс
+    считается по факту чтения, а не по факту рендера.
+    """
+
+    def __init__(self, reader, job_id: str | None = None):
+        self._reader = reader
+        self._job_id = job_id
+        self.done = 0
+        self.total = 0
+
+    def for_pages(self, total: int) -> None:
+        self.total = total
+        self.done = 0
+        self._report()
+
+    def __call__(self, image):
+        result = self._reader(image)
+        self.done += 1
+        self._report()
+        return result
+
+    def _report(self) -> None:
+        if self._job_id is not None:
+            set_progress(self._job_id, self.done, self.total)
+
+
+def convert_pair(
+    path1: str,
+    path2: str,
+    chat,
+    max_images_bytes: int | None,
+    job_id: str | None = None,
+) -> dict:
+    """Конвертация двух документов.
+
+    Для пары PDF используется парная функция: выбор страниц для чтения и
+    кропы требуют обоих документов. Прочие форматы конвертируются
+    пофайловой функцией, как раньше.
+    """
+    if _is_pdf(path1) and _is_pdf(path2):
+        return convert_pdf_pair(
+            path1,
+            path2,
+            vision_chat=chat,
+            max_images_bytes=max_images_bytes,
+            job_id=job_id,
+        )
+    return {
+        "blocks1": convert_document(path1, max_images_bytes=max_images_bytes),
+        "blocks2": convert_document(path2, max_images_bytes=max_images_bytes),
+        "alignment": None,
+        "crops": {},
+        "crops_truncated": False,
+        "degraded": False,
+        "degraded_pages": [],
+        "unreadable": [],
+        "unchanged": [],
+        "page_count1": 0,
+        "page_count2": 0,
+        "is_pdf": False,
+    }
+
+
+def _normalize(conversion: dict) -> dict:
+    """Нормализует блоки обеих сторон перед сравнением."""
+    conversion["blocks1"] = normalize_blocks(conversion["blocks1"])
+    conversion["blocks2"] = normalize_blocks(conversion["blocks2"])
+    return conversion
+
+
+def _is_pdf(path: str) -> bool:
+    return path.lower().endswith(".pdf")
+
+
+def _group_by_page(rows: list[dict], conversion: dict) -> list[dict]:
+    """Вставляет свёрнутые диапазоны совпавших страниц и строки
+    непрочитанных страниц.
+
+    Совпавшие страницы не дают строк — их не читали, потому что правок на них
+    нет. Непрочитанные страницы тоже строк не дают, но молча скрывать их
+    нельзя: это означало бы скрыть возможную правку, поэтому такая страница
+    показывается отдельной строкой с признаком деградации.
+
+    Порядок строк сохраняется: маркеры вставляются перед первой строкой той
+    страницы, которая идёт после них.
+    """
+    if not conversion["is_pdf"]:
+        return rows
+
+    markers = _page_markers(conversion)
+    if not markers:
+        return rows
+
+    # Ничего не прочитано: строк нет, и диапазоны нечего вставлять. Так
+    # бывает при полном совпадении документов — интерфейс покажет отдельное
+    # сообщение о совпадении.
+    if not rows:
+        return [_marker_row(marker) for marker in markers]
+
+    with_ranges: list[dict] = []
+    used = 0
+    for row in rows:
+        page = _row_page(row)
+        while used < len(markers) and page is not None and markers[used]["page"] < page:
+            with_ranges.append(_marker_row(markers[used]))
+            used += 1
+        with_ranges.append(row)
+    while used < len(markers):
+        with_ranges.append(_marker_row(markers[used]))
+        used += 1
+    return with_ranges
+
+
+def _page_markers(conversion: dict) -> list[dict]:
+    """Маркеры страниц по возрастанию номера: непрочитанные и совпавшие.
+
+    Подряд идущие совпавшие страницы объединяются в один маркер диапазона.
+    """
+    unreadable = conversion["unreadable"]
+    unreadable_set = {*unreadable["left"], *unreadable["right"]}
+    unchanged = sorted({second for _, second in conversion["unchanged"]})
+
+    markers: list[dict] = []
+    for page in unchanged:
+        if (
+            markers
+            and not markers[-1]["unreadable"]
+            and markers[-1]["last"] == page - 1
+        ):
+            markers[-1]["last"] = page
+        else:
+            markers.append({"page": page, "last": page, "unreadable": False})
+    for page in sorted(unreadable_set):
+        markers.append({"page": page, "last": page, "unreadable": True})
+    markers.sort(key=lambda marker: marker["page"])
+    return markers
+
+
+def _marker_row(marker: dict) -> dict:
+    """Строка маркера: непрочитанная страница либо свёрнутый диапазон."""
+    if marker["unreadable"]:
+        return _unreadable_row(marker["page"])
+    return _collapsed_row(marker["page"], marker["last"])
+
+
+def _row_page(row: dict) -> int | None:
+    """Номер страницы строки: своей стороны, иначе противоположной."""
+    for side in ("left", "right"):
+        page = (row.get(side) or {}).get("page")
+        if page is not None:
+            return page
+    return None
+
+
+def _collapsed_row(first: int, last: int) -> dict:
+    """Свёрнутый диапазон совпавших страниц."""
+    collapsed = [first, last]
+    side = {
+        "text": "",
+        "change": None,
+        "html": "",
+        "images": [],
+        "collapsed": collapsed,
+    }
+    return {"left": dict(side), "right": dict(side)}
+
+
+def _unreadable_row(page: int) -> dict:
+    """Страница, которую не удалось прочитать: видна, а не скрыта."""
+    side = {
+        "text": "",
+        "change": None,
+        "html": "",
+        "images": [],
+        "unreadable": True,
+        "page": page,
+    }
+    return {"left": dict(side), "right": dict(side)}
+
+
+def _page_summary(conversion: dict) -> dict:
+    """Сведения о страницах для интерфейса: свёрнутые диапазоны, кропы."""
+    return {
+        "unchanged": [list(pair) for pair in conversion["unchanged"]],
+        "degraded_pages": conversion["degraded_pages"],
+        "unreadable": conversion["unreadable"],
+        "page_count": {
+            "left": conversion["page_count1"],
+            "right": conversion["page_count2"],
+        },
+    }
+
+
+def _documents_identical(
+    rows: list[dict], fragments: list[dict], conversion: dict
+) -> bool:
+    """Признак полного совпадения документов.
+
+    Истина, когда различий нет ни по тексту, ни по изображению и ни одна
+    страница не осталась непрочитанной или деградировавшей: неизвестность —
+    не совпадение (spec: comparison-jobs). Признак `degraded` уже несёт
+    сведения и о деградировавших, и о непрочитанных страницах.
+
+    Считается по строкам до вставки маркеров свёрнутых диапазонов: они
+    не содержат сведений о различиях.
+    """
+    return (
+        not fragments
+        and not conversion["degraded"]
+        and not _pages_differ(conversion)
+        and not _has_image_difference(rows)
+    )
+
+
+def _pages_differ(conversion: dict) -> bool:
+    """Визуальное различие страниц по выравниванию двух документов.
+
+    Различие в тексте страницы читатель может и не увидеть (сканы читаются
+    неидеально, ветка текстового слоя страницы вообще не сравнивает), но
+    различие картинок страницы уже измерено — совпадением его считать
+    нельзя (spec: comparison-jobs).
+    """
+    alignment = conversion["alignment"]
+    return bool(
+        alignment and (alignment.pairs or alignment.only_old or alignment.only_new)
+    )
+
+
+def _has_image_difference(rows: list[dict]) -> bool:
+    """Различие по изображению при совпавшем тексте.
+
+    Текстовый diff картинки не видит, поэтому замена изображения отмечается
+    либо флагом `images_changed` на парной строке, либо односторонней
+    строкой с картинкой — под-строкой изображений из `_image_subrows`.
+    """
+    for row in rows:
+        left = row.get("left")
+        right = row.get("right")
+        if (left or {}).get("images_changed") or (right or {}).get("images_changed"):
+            return True
+        if (left is None) != (right is None) and (left or right or {}).get("images"):
+            return True
+    return False
 
 
 def _side_change(label: str, side: str) -> str | None:
@@ -151,6 +433,10 @@ def _row_side(block: dict, change: str | None) -> dict:
         "html": block["html"],
         "images": [img["data_uri"] for img in block["images"]],
     }
+    if block.get("page") is not None:
+        side["page"] = block["page"]
+    if block.get("words"):
+        side["words"] = block["words"]
     _enrich_table_block(side)
     return side
 
@@ -250,7 +536,7 @@ def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
             emit_paired(old, new, _row_side(old, None), _row_side(new, None))
         pos1, pos2 = end1, end2
 
-    for frag, label in zip(fragments, labels):
+    for frag, label in zip(fragments, labels, strict=True):
         (i1, i2), (j1, j2) = frag["old_range"], frag["new_range"]
         emit_equal(i1, j1)
         old = blocks1[i1:i2]

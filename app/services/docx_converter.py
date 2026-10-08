@@ -122,7 +122,11 @@ def _paragraph_images(paragraph: Paragraph, budget: list[int]) -> list[dict]:
                 continue  # лимит исчерпан: хвост изображений отбрасывается
             budget[0] -= len(blob)
             images.append(
-                {"data_uri": data_uri, "sha1": hashlib.sha1(blob).hexdigest()}
+                {
+                    "data_uri": data_uri,
+                    # ключ дедупликации содержимого, не криптография
+                    "sha1": hashlib.sha1(blob).hexdigest(),  # noqa: S324
+                }
             )
     return images
 
@@ -206,6 +210,29 @@ def _table_blocks(table: Table, budget: list[int]) -> list[dict]:
             }
         )
     return blocks
+
+
+def _wrap_text_html(tag: str, text: str) -> str:
+    """Оборачивает текст блока в тег; текст экранируется приложением,
+    поэтому инвариант textContent(html) == text выполняется по построению.
+
+    Общий помощник для конвертеров, собирающих HTML из готового текста
+    (см. pdf_converter) — чтобы набор тегов и правило экранирования были
+    одними и теми же.
+    """
+    inner = html_module.escape(text)
+    if tag.startswith("h"):
+        return f"<{tag}>{inner}</{tag}>"
+    if tag == "ul":
+        return f"<ul><li>{inner}</li></ul>"
+    if tag == "ol":
+        return f"<ol><li>{inner}</li></ol>"
+    return f"<p>{inner}</p>"
+
+
+def wrap_text_html(tag: str, text: str) -> str:
+    """Публичный доступ к сборке HTML-представления из текста блока."""
+    return _wrap_text_html(tag, text)
 
 
 def convert_docx(path: str, max_images_bytes: int | None = None) -> list[dict]:

@@ -9,7 +9,7 @@
 <body>
     <header class="page-header">
         <h1>Сравнение версий документа</h1>
-        <p>Загрузите две версии документа (.docx) для сравнения</p>
+        <p>Загрузите две версии документа (.docx, .pdf) для сравнения</p>
     </header>
 
     <div class="controls">
@@ -17,13 +17,13 @@
         <div class="upload-zone" id="zone1" data-slot="1">
             <span class="zone-label">Файл 1 (исходный)</span>
             <button type="button" class="btn" id="open1">Открыть файл 1</button>
-            <input type="file" id="file1" accept=".docx" hidden>
+            <input type="file" id="file1" accept=".docx,.pdf" hidden>
             <span class="zone-filename" id="name1"></span>
         </div>
         <div class="upload-zone" id="zone2" data-slot="2">
             <span class="zone-label">Файл 2 (изменённый)</span>
             <button type="button" class="btn" id="open2">Открыть файл 2</button>
-            <input type="file" id="file2" accept=".docx" hidden>
+            <input type="file" id="file2" accept=".docx,.pdf" hidden>
             <span class="zone-filename" id="name2"></span>
         </div>
     </div>
@@ -47,6 +47,8 @@
             <span class="step-dot"></span>Анализ через LLM
         </div>
     </div>
+
+    <div class="progress-note" id="progress" hidden></div>
 
     <div class="error-message" id="error" hidden></div>
     <div class="degraded-notice" id="degraded" hidden>

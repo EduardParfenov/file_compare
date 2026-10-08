@@ -3,6 +3,8 @@
 // Состояние загрузок: slot (1|2) -> upload_id
 const uploads = { 1: null, 2: null };
 const POLL_INTERVAL_MS = 1000;
+// Идентификатор текущей задачи: нужен для раскрытия диапазонов страниц
+let currentJobId = null;
 
 const els = {
     zones: { 1: document.getElementById("zone1"), 2: document.getElementById("zone2") },
@@ -13,6 +15,7 @@ const els = {
     steps: Array.from(document.querySelectorAll("#stepper .step")),
     error: document.getElementById("error"),
     degraded: document.getElementById("degraded"),
+    progress: document.getElementById("progress"),
     diff: document.getElementById("diff"),
     contentLeft: document.getElementById("content-left"),
     contentRight: document.getElementById("content-right"),
@@ -86,7 +89,7 @@ function resetStepper() {
 }
 
 // jobStatus: "processing" | "done" | "failed"; stageKey — текущий этап или null
-function setStepper(stageKey, jobStatus) {
+function setStepper(stageKey, jobStatus, progress) {
     const current = STAGES.indexOf(stageKey);
     els.steps.forEach((el, i) => {
         el.classList.remove("active", "done", "error");
@@ -98,6 +101,21 @@ function setStepper(stageKey, jobStatus) {
             el.classList.add("active");
         }
     });
+    setStageProgress(stageKey, jobStatus, progress);
+}
+
+// Прогресс по страницам необязателен: при его отсутствии подпись пуста,
+// и степпер выглядит как раньше.
+function setStageProgress(stageKey, jobStatus, progress) {
+    if (!els.progress) return;
+    const total = progress && progress.total ? progress.total : 0;
+    if (!total || jobStatus !== "processing") {
+        els.progress.textContent = "";
+        els.progress.hidden = true;
+        return;
+    }
+    els.progress.hidden = false;
+    els.progress.textContent = `${progress.done} из ${total} страниц`;
 }
 
 async function startCompare() {
@@ -105,6 +123,8 @@ async function startCompare() {
     els.diff.hidden = true;
     els.compare.disabled = true;
     resetStepper();
+    els.progress.hidden = true;
+    els.progress.textContent = "";
 
     let response;
     try {
@@ -128,6 +148,7 @@ async function startCompare() {
         return;
     }
     const { job_id } = await response.json();
+    currentJobId = job_id;
     pollJob(job_id);
 }
 
@@ -147,7 +168,7 @@ function pollJob(jobId) {
         }
 
         if (body.status === "processing") {
-            setStepper(body.stage, "processing");
+            setStepper(body.stage, "processing", body.stage_progress);
         } else if (body.status === "done") {
             clearInterval(timer);
             setStepper(body.stage, "done");
@@ -295,6 +316,122 @@ function renderBlockContent(div, block) {
     if (block.change) div.classList.add(`change-${block.change}`);
 }
 
+// Номер страницы блока: подпись строки. Для совпадающих блоков видны
+// номера обеих сторон, чтобы совпавшему блоку не была приписана чужая
+// страница. Номер — только отображение, в вычислении различий не участвует.
+function appendPageBadge(el, block) {
+    if (block.page === undefined || block.page === null) return;
+    const badge = document.createElement("span");
+    badge.className = "page-badge";
+    badge.textContent = `стр. ${block.page}`;
+    el.appendChild(badge);
+}
+
+// Состояние раскрытых диапазонов: ключ "job:side:from-to" -> true.
+// Повторное нажатие сворачивает диапазон обратно.
+const expandedRanges = new Set();
+
+// Свёрнутый диапазон совпавших страниц: диапазон приходит в collapsed,
+// а не в page, поэтому подпись рисуется отдельно от блока.
+function renderCollapsedRange(block, side, jobId) {
+    const [from, to] = block.collapsed;
+    const div = document.createElement("div");
+    div.className = "diff-block collapsed-range";
+    const key = rangeKey(jobId, side, from, to);
+    const label = document.createElement("button");
+    label.type = "button";
+    label.className = "collapsed-label";
+    const title = from === to ? `страница ${from}` : `страницы ${from}–${to}`;
+    label.textContent = `${title} без изменений`;
+    if (expandedRanges.has(key)) label.classList.add("expanded");
+    label.addEventListener("click", () => toggleRange(label, key, side, from, to, div, jobId));
+    div.appendChild(label);
+    return div;
+}
+
+function rangeKey(jobId, side, from, to) {
+    return `${jobId}:${side}:${from}-${to}`;
+}
+
+// Раскрытие диапазона добывает текст страниц с сервера: совпавшие страницы
+// при сравнении не читались, поэтому их текст запрашивается здесь.
+async function toggleRange(label, key, side, from, to, container, jobId) {
+    if (expandedRanges.has(key)) {
+        expandedRanges.delete(key);
+        label.classList.remove("expanded");
+        container.replaceChildren(label);
+        return;
+    }
+    expandedRanges.add(key);
+    label.classList.add("expanded");
+    label.textContent = "загрузка страниц…";
+    let body;
+    try {
+        const response = await fetch(`/api/jobs/${jobId}/pages`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ side, first: from, last: to }),
+        });
+        body = await response.json();
+        if (!response.ok) throw new Error(body.error || `код ${response.status}`);
+    } catch (err) {
+        expandedRanges.delete(key);
+        label.classList.remove("expanded");
+        label.textContent = `страницы ${from}–${to}: не удалось загрузить (${err.message})`;
+        return;
+    }
+    label.textContent = `страницы ${from}–${to} без изменений`;
+    container.replaceChildren(label, ...renderExpandedPages(body.pages || [], side));
+}
+
+// Блоки раскрытых страниц: текст без подсветки и с отметкой номера страницы,
+// поскольку в пределах диапазона различий нет.
+function renderExpandedPages(blocks, side) {
+    const nodes = [];
+    for (const block of blocks) {
+        const div = document.createElement("div");
+        div.className = "diff-block expanded-page";
+        if (block.html) div.innerHTML = block.html;
+        else div.textContent = block.text;
+        appendPageBadge(div, block);
+        nodes.push(div);
+    }
+    return nodes;
+}
+
+// Кропы визуально изменённых областей: привязаны к странице, а не к строке,
+// поэтому выводятся один раз на страницу над её строками.
+function cropsForPage(result, page) {
+    const crops = (result.crops || {})[page];
+    return Array.isArray(crops) ? crops : [];
+}
+
+function appendCrops(container, result, pages) {
+    const seen = new Set();
+    for (const page of pages) {
+        if (page === undefined || page === null || seen.has(page)) continue;
+        seen.add(page);
+        for (const uri of cropsForPage(result, page)) {
+            const img = document.createElement("img");
+            img.src = uri;
+            img.className = "region-crop";
+            img.alt = `Изменённая область страницы ${page}`;
+            container.appendChild(img);
+        }
+    }
+}
+
+// Страница, которую не удалось прочитать. Показывается отдельной строкой
+// с предупреждением: молча скрытая страница выглядела бы как совпавшая,
+// а правка на ней могла бы потеряться вместе с уведомлением.
+function renderUnreadablePage(block) {
+    const div = document.createElement("div");
+    div.className = "diff-block unreadable-page";
+    div.textContent =
+        `стр. ${block.page}: не удалось прочитать страницу`;
+    return div;
+}
+
 function renderBlock(block, placeholderKind, side) {
     const div = document.createElement("div");
     div.className = "diff-block";
@@ -304,8 +441,11 @@ function renderBlock(block, placeholderKind, side) {
         div.innerHTML = "&nbsp;";
         return div;
     }
+    if (block.collapsed) return renderCollapsedRange(block, side, currentJobId);
+    if (block.unreadable) return renderUnreadablePage(block);
     renderBlockContent(div, block);
     appendImages(div, block, side);
+    appendPageBadge(div, block);
     return div;
 }
 
@@ -426,6 +566,18 @@ function renderResult(result) {
     els.contentLeft.innerHTML = "";
     els.contentRight.innerHTML = "";
     const rows = result.rows;
+
+    // Признак полного совпадения вычисляет сервер: он видит и различия по
+    // тексту, и различия по изображению, и состояние страниц. По составу
+    // страниц совпадение не выводится — у различающихся документов
+    // неизменённых страниц как раз нет.
+    if (result.identical) {
+        els.contentLeft.appendChild(identicalNotice());
+        els.contentRight.appendChild(identicalNotice());
+        els.diff.hidden = false;
+        return;
+    }
+
     let i = 0;
     while (i < rows.length) {
         if (isTableGroupRow(rows[i])) {
@@ -451,10 +603,34 @@ function renderResult(result) {
             i++;
         }
     }
+    if (result.crops) {
+        appendCrops(els.contentLeft, result, pagesOfSide(rows, "left"));
+        appendCrops(els.contentRight, result, pagesOfSide(rows, "right"));
+    }
     if (!result.semantic) els.degraded.hidden = false;
     els.diff.hidden = false;
     // Измеряем только после того, как панели стали видимыми
     equalizeHeights();
+}
+
+// Страницы, присутствующие в строках результата: по ним ищем кропы,
+// чтобы не дублировать одну картинку на каждую строку страницы.
+function pagesOfSide(rows, side) {
+    const pages = [];
+    for (const row of rows) {
+        const block = row[side];
+        if (block && block.page !== undefined && block.page !== null) {
+            pages.push(block.page);
+        }
+    }
+    return pages;
+}
+
+function identicalNotice() {
+    const div = document.createElement("div");
+    div.className = "diff-block identical-notice";
+    div.textContent = "Документы совпадают по тексту и по изображению";
+    return div;
 }
 
 // Синхронный скролл панелей по обеим осям.

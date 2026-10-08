@@ -22,6 +22,10 @@ FALLBACK_BY_OPCODE = {
 
 LLM_TIMEOUT = 30  # секунд; предварительное значение
 
+# Таймаут роли чтения страниц по умолчанию, если не задан в конфигурации.
+# Страница 8B-модели при 300 dpi читается заметно дольше классификации фрагмента.
+OCR_TIMEOUT_DEFAULT = 120
+
 SYSTEM_PROMPT = (
     "Ты — классификатор изменений документов. Тебе дан старый и новый "
     "фрагменты документа. Определи тип изменения и ответь строго одним "
@@ -31,13 +35,22 @@ SYSTEM_PROMPT = (
 )
 
 
-def create_chat_model(config) -> ChatOpenAI:
-    """Создаёт клиент OpenAI-совместимого API из конфигурации приложения."""
+def create_chat_model(
+    config,
+    timeout: int = LLM_TIMEOUT,
+    model: str | None = None,
+) -> ChatOpenAI:
+    """Создаёт клиент OpenAI-совместимого API из конфигурации приложения.
+
+    Конфигурация модели (адрес, ключ, имя, extra_body) общая для всех ролей.
+    Различаются только параметры вызова: таймаут и, при необходимости, имя
+    модели — так роль задаёт своё поведение, не затрагивая другие роли.
+    """
     return ChatOpenAI(
         base_url=config["LLM_BASE_URL"],
         api_key=config["LLM_API_KEY"] or "not-needed",
-        model=config["LLM_MODEL"],
-        timeout=LLM_TIMEOUT,
+        model=model or config["LLM_MODEL"],
+        timeout=timeout,
         max_retries=0,  # ретраи выполняем сами по своим правилам
         extra_body=config.get("LLM_EXTRA_BODY") or None,
     )

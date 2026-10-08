@@ -6,7 +6,12 @@ LLM заменяется моком: тесты детерминированы �
 from types import SimpleNamespace
 from typing import ClassVar
 
-from app.services.llm import classify_fragment, classify_fragments, create_chat_model
+from app.services.llm import (
+    LLM_TIMEOUT,
+    classify_fragment,
+    classify_fragments,
+    create_chat_model,
+)
 
 
 class MockChat:
@@ -138,6 +143,23 @@ class TestCreateChatModel:
         "LLM_MODEL": "qwen3-14b",
         "LLM_EXTRA_BODY": None,
     }
+
+    def test_default_timeout(self):
+        # Классификация фрагментов использует таймаут своей роли
+        assert create_chat_model(self.CONFIG).request_timeout == LLM_TIMEOUT
+
+    def test_explicit_timeout_for_role(self):
+        # Роль чтения страниц задаёт свой таймаут, не меняя конфигурацию модели
+        chat = create_chat_model(self.CONFIG, timeout=300)
+        assert chat.request_timeout == 300
+        assert chat.model_name == self.CONFIG["LLM_MODEL"]
+
+    def test_roles_do_not_share_state(self):
+        # Таймаут одной роли не влияет на другую: клиенты независимы
+        classifier = create_chat_model(self.CONFIG)
+        reader = create_chat_model(self.CONFIG, timeout=300)
+        assert classifier.request_timeout == LLM_TIMEOUT
+        assert reader.request_timeout == 300
 
     def test_without_extra_body(self):
         chat = create_chat_model(self.CONFIG)

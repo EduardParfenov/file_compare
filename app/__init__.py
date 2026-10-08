@@ -41,20 +41,30 @@ def create_app(test_config: dict | None = None) -> Flask:
         SECRET_KEY=os.environ.get("SECRET_KEY", "dev"),
         UPLOAD_DIR=upload_dir,
         MAX_CONTENT_LENGTH=int(
-            os.environ.get("MAX_CONTENT_LENGTH", str(16 * 1024 * 1024))
+            os.environ.get("MAX_CONTENT_LENGTH", str(128 * 1024 * 1024))
         ),
         MAX_IMAGES_TOTAL_BYTES=int(
             os.environ.get("MAX_IMAGES_TOTAL_BYTES", str(10 * 1024 * 1024))
         ),
         ALLOWED_EXTENSIONS={
             ext.strip()
-            for ext in os.environ.get("ALLOWED_EXTENSIONS", ".docx").split(",")
+            for ext in os.environ.get("ALLOWED_EXTENSIONS", ".docx,.pdf").split(",")
             if ext.strip()
         },
         LLM_BASE_URL=os.environ.get("LLM_BASE_URL", ""),
         LLM_API_KEY=os.environ.get("LLM_API_KEY", ""),
         LLM_MODEL=os.environ.get("LLM_MODEL", ""),
         LLM_EXTRA_BODY=_parse_llm_extra_body(),
+        # Настройки роли чтения страниц. Конфигурация модели общая с
+        # классификацией: разделены только параметры вызова (spec: vision-ocr).
+        OCR_TIMEOUT=int(os.environ.get("OCR_TIMEOUT", str(120))),
+        OCR_CONCURRENCY=int(os.environ.get("OCR_CONCURRENCY", "4")),
+        OCR_PROMPT_VERSION=os.environ.get("OCR_PROMPT_VERSION", "v1"),
+        # Параметры рендера и извлечения кропов PDF (spec: page-image-diff)
+        PDF_RENDER_DPI=int(os.environ.get("PDF_RENDER_DPI", "200")),
+        PDF_CROPS_MAX_BYTES=int(
+            os.environ.get("PDF_CROPS_MAX_BYTES", str(4 * 1024 * 1024))
+        ),
         APP_VERSION=_read_version(),
     )
 
