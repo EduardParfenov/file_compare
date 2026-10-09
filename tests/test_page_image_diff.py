@@ -8,7 +8,7 @@ import pytest
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent))
-from pdf_fixtures import write_scan_pdf
+from pdf_fixtures import PAGE_HEIGHT, PAGE_WIDTH, write_scan_pdf
 
 from app.services import page_image_diff as pid
 
@@ -36,7 +36,7 @@ class TestRender:
     def test_pages_rendered_at_dpi(self, tmp_path):
         pages = pages_of(tmp_path, "s.pdf", ["A", "B"])
         assert [page.number for page in pages] == [1, 2]
-        assert pages[0].size[0] == pytest.approx(300 * DPI // 72, abs=2)
+        assert pages[0].size[0] == pytest.approx(PAGE_WIDTH * DPI // 72, abs=2)
 
     def test_no_files_written_to_disk(self, tmp_path):
         path = scan(tmp_path, "s.pdf", ["A"])
@@ -228,7 +228,7 @@ class TestCrops:
 
     def test_regions_are_large_enough(self, tmp_path):
         boxes = pid.changed_regions(*self.pair(tmp_path, "Stable text", "Stable text"))
-        page_area = (300 * DPI // 72) * (400 * DPI // 72)
+        page_area = (PAGE_WIDTH * DPI // 72) * (PAGE_HEIGHT * DPI // 72)
         assert all(
             (x1 - x0) * (y1 - y0) >= pid.MIN_REGION_RATIO * page_area
             for x0, y0, x1, y1 in boxes
