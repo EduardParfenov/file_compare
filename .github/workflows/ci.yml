@@ -11,15 +11,20 @@ on:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    # Образ закреплён явно: метка ubuntu-latest мигрирует на Ubuntu 26
+    # (объявлено на 19 октября 2026), и смена образа не должна менять
+    # результат проверок без участия разработчика.
+    runs-on: ubuntu-24.04
     steps:
+      # Actions закреплены на версиях, работающих на поддерживаемом рантайме
+      # Node 24: Node 20 объявлен устаревшим, и v4/v5/v2 работали на нём.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
@@ -37,7 +42,7 @@ jobs:
         run: pytest
 
       - name: Scan for secrets
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -45,7 +50,7 @@ jobs:
         run: pip-audit -r requirements.txt -r requirements-dev.txt
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
 
