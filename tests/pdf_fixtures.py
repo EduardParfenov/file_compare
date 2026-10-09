@@ -12,7 +12,7 @@ import zlib
 
 from PIL import Image, ImageDraw, ImageFont
 
-PAGE_WIDTH = 300
+PAGE_WIDTH = 1000
 PAGE_HEIGHT = 400
 
 
