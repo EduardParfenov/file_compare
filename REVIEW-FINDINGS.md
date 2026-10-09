@@ -75,7 +75,7 @@ ext = os.path.splitext(filename)[1].lower()
 
 ```python
 result = PageReadResult(markdown=markdown, unreadable=failed, degraded=failed)
-store_result(key, result)   # ← сюда попадает и failed=True
+store_result(key, result)  # ← сюда попадает и failed=True
 ```
 
 Один таймаут/сетевой сброс → страница закэширована как `unreadable`
