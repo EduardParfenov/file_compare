@@ -88,7 +88,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         # классификацией: разделены только параметры вызова (spec: vision-ocr).
         OCR_TIMEOUT=int(os.environ.get("OCR_TIMEOUT", str(120))),
         OCR_CONCURRENCY=int(os.environ.get("OCR_CONCURRENCY", "4")),
-        OCR_PROMPT_VERSION=os.environ.get("OCR_PROMPT_VERSION", "v1"),
+        OCR_PROMPT_VERSION=os.environ.get("OCR_PROMPT_VERSION", "v2"),
         # Параметры рендера и извлечения кропов PDF (spec: page-image-diff)
         PDF_RENDER_DPI=int(os.environ.get("PDF_RENDER_DPI", "200")),
         PDF_CROPS_MAX_BYTES=int(
