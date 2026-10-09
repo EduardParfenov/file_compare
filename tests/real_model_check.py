@@ -83,7 +83,7 @@ def main() -> int:
     started = time.time()
     with app.app_context():
         reader = vision_ocr.create_reader(app.config, chat=chat)
-        result = reader(pages[1].image)
+        result = reader(pages[1].image, 2)
         elapsed = time.time() - started
         print(f"--- Страница 2 ({elapsed:.1f} с) ---")
         print(f"unreadable={result.unreadable} degraded={result.degraded}")

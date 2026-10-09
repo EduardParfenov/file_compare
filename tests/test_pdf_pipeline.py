@@ -172,8 +172,8 @@ def _echo_reader():
     """Читатель, отдающий текст по номеру страницы (для детерминизма)."""
     from app.services.vision_ocr import PageReadResult
 
-    def reader(image):
-        number = getattr(image, "number", None) or 1
+    def reader(image, page=None):
+        number = page or getattr(image, "number", None) or 1
         return PageReadResult(markdown=f"# Страница {number}", unreadable=False)
 
     return reader
@@ -183,7 +183,7 @@ def _failing_reader():
     """Читатель, который ничего не прочитывает."""
     from app.services.vision_ocr import PageReadResult
 
-    def reader(image):
+    def reader(image, page=None):
         return PageReadResult(markdown="", unreadable=True, degraded=True)
 
     return reader
