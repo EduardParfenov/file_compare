@@ -1,6 +1,6 @@
 # Backlog
 
-## Критичные замечания (из REVIEW-CRITICAL.md)
+## Критичные замечания (из REVIEW-CRITICAL.md и REVIEW-FINDINGS.md)
 
 - [ ] Добавить threading.Lock к in-memory реестрам (`uploads._UPLOADS`,
       `jobs._JOBS`) — защита от гонок при конкурентных запросах.
@@ -9,6 +9,19 @@
 - [ ] Добавить проверку типа файла (magic bytes) в дополнение к расширению
 - [ ] Добавить rate limiting
 - [ ] Добавить тесты для клиентской части (jsdom/playwright)
+- [ ] **F1** Починить загрузку русских имён: расширение вычислять до
+      `secure_filename` (сейчас `документ.docx` → `docx` без расширения →
+      отказ). Подробности: `REVIEW-FINDINGS.md`.
+- [ ] **F2** Дотянуть OCR/PDF-конфиг до пайплайна: `PDF_CROPS_MAX_BYTES`,
+      `OCR_CONCURRENCY`, `OCR_PROMPT_VERSION`, `OCR_TIMEOUT` (и
+      `PDF_RENDER_DPI`) загружаются в config, но не доходят до вызовов —
+      сравнение сканов всегда при 30 с / 200 dpi / последовательном
+      чтении / prompt v2. Покрыть тестами «конфиг → вызов», не только
+      «env → config». Подробности: `REVIEW-FINDINGS.md`.
+- [ ] **F3** Не кэшировать неудачные результаты OCR
+      (`vision_ocr.read_page` кладёт `failed=True` в `_CACHE` навсегда —
+      transient-таймаут превращается в перманентную деградацию до
+      рестарта). Подробности: `REVIEW-FINDINGS.md`.
 
 ## Логика приложения — приоритет над инфраструктурой (решено 2026-10-09)
 
