@@ -67,6 +67,17 @@ class TestMultimodalRequest:
         vo.read_page(page_image(), chat)
         assert chat.messages[0][0].content == vo.SYSTEM_PROMPT
 
+    def test_system_instruction_requires_verbatim(self):
+        """Инструкция требует дословности и запрещает пересказ/сокращения."""
+        assert "дословно" in vo.SYSTEM_PROMPT
+        assert "суммирования" in vo.SYSTEM_PROMPT
+        assert "пересказа" in vo.SYSTEM_PROMPT
+        assert "сокращений" in vo.SYSTEM_PROMPT
+        assert "перефразирования" in vo.SYSTEM_PROMPT
+
+    def test_prompt_version_is_v2(self):
+        assert vo.PROMPT_VERSION == "v2"
+
     def test_three_pages_three_requests(self):
         chat = MockChat(["a", "b", "c"])
         results = vo.read_pages(

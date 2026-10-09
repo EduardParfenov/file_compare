@@ -73,7 +73,7 @@ class TestReadingRoleConfig:
         app = create_app({"TESTING": True, "UPLOAD_DIR": str(tmp_path / "u")})
         assert app.config["OCR_TIMEOUT"] == 120
         assert app.config["OCR_CONCURRENCY"] == 4
-        assert app.config["OCR_PROMPT_VERSION"] == "v1"
+        assert app.config["OCR_PROMPT_VERSION"] == "v2"
         assert app.config["PDF_RENDER_DPI"] == 200
         assert app.config["PDF_CROPS_MAX_BYTES"] == 4 * 1024 * 1024
 
