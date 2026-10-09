@@ -18,11 +18,15 @@ from __future__ import annotations
 import base64
 import hashlib
 import html as html_module
+import logging
 import re
 
 import pdfplumber
 
+from app.services import logs
 from app.services.docx_converter import wrap_text_html
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_DPI = 200
 
@@ -54,12 +58,17 @@ def has_text_layer(path: str) -> bool:
     оценивается, частично заполненный слой считается присутствующим.
     """
     with _open(path) as pdf:
-        for page in pdf.pages:
+        for number, page in enumerate(pdf.pages, start=1):
             try:
                 if (page.extract_text() or "").strip():
                     return True
-            except Exception:  # noqa: BLE001, S112 — повреждённая страница не решает вопрос
-                continue
+            except Exception as exc:  # noqa: BLE001 — причина уходит в журнал
+                logs.log_warning(
+                    logger,
+                    "Страница %s пропущена при проверке текстового слоя: %s",
+                    number,
+                    logs.failure_reason(exc),
+                )
     return False
 
 
@@ -171,7 +180,10 @@ def _word_boxes(page, bbox) -> list[dict]:
     """Координаты слов (в точках PDF) для привязки кропов."""
     try:
         words = page.extract_words()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 — причина уходит в журнал
+        logs.log_warning(
+            logger, "Координаты слов не извлечены: %s", logs.failure_reason(exc)
+        )
         return []
     left, top, right, bottom = bbox
     return [
@@ -186,8 +198,16 @@ def _word_boxes(page, bbox) -> list[dict]:
     ]
 
 
-def _embedded_images(page, budget: list[int]) -> list[dict]:
-    """Встроенные изображения страницы как data-URI с подписью содержимого."""
+def _embedded_images(
+    page, budget: list[int], page_number: int | None = None
+) -> list[dict]:
+    """Встроенные изображения страницы как data-URI с подписью содержимого.
+
+    Битое изображение и неудачное кодирование не отменяют конвертацию, но
+    оставляют след в журнале: без записи страница молча теряет картинку
+    (spec: application-logging). В журнал идут номер страницы и причина, но не
+    байты изображения.
+    """
     from app.services.diffing import is_table_row  # noqa: F401 — единый контракт
 
     images = []
@@ -202,14 +222,26 @@ def _embedded_images(page, budget: list[int]) -> list[dict]:
                 )
             )
             data = cropped.to_image(resolution=72).original
-        except Exception:  # noqa: BLE001, S112 — битое изображение не отменяет конвертацию
+        except Exception as exc:  # noqa: BLE001 — причина уходит в журнал
+            logs.log_warning(
+                logger,
+                "Изображение страницы %s не извлечено: %s",
+                page_number,
+                logs.failure_reason(exc),
+            )
             continue
         import io
 
         buffer = io.BytesIO()
         try:
             data.save(buffer, format="PNG")
-        except Exception:  # noqa: BLE001, S112 — нечем кодировать изображение
+        except Exception as exc:  # noqa: BLE001 — причина уходит в журнал
+            logs.log_warning(
+                logger,
+                "Изображение страницы %s не закодировано: %s",
+                page_number,
+                logs.failure_reason(exc),
+            )
             continue
         blob = buffer.getvalue()
         if len(blob) > budget[0]:
@@ -235,7 +267,10 @@ def _page_lines(page) -> list[tuple[float, str]]:
     """
     try:
         words = page.extract_words(use_text_flow=False)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 — причина уходит в журнал
+        logs.log_warning(
+            logger, "Строки страницы не разобраны: %s", logs.failure_reason(exc)
+        )
         return []
     if not words:
         return []
@@ -299,10 +334,16 @@ def convert_pdf_text_layer(
     budget = [max_images_bytes]
     with _open(path) as pdf:
         for index, page in enumerate(pdf.pages, start=1):
-            images = _embedded_images(page, budget)
+            images = _embedded_images(page, budget, index)
             try:
                 tables = page.find_tables()
-            except Exception:  # noqa: BLE001 — отсутствие сетки не является ошибкой
+            except Exception as exc:  # noqa: BLE001 — причина уходит в журнал
+                logs.log_warning(
+                    logger,
+                    "Страница %s: сетка таблиц не разобрана: %s",
+                    index,
+                    logs.failure_reason(exc),
+                )
                 tables = []
             table_bboxes = [
                 tuple(table.bbox) for table in tables if table.bbox is not None
@@ -372,7 +413,7 @@ def convert_pdf_by_reading(
     results = {}
     if pages_to_read:
         results = {
-            number: reader(page_images[number])
+            number: reader(page_images[number], number)
             for number in pages_to_read
             if number in page_images
         }

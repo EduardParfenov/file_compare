@@ -1,10 +1,12 @@
 """Задачи сравнения: in-memory store, этапные статусы, пайплайн обработки."""
 
 import difflib
+import logging
 import threading
 import uuid
 from itertools import zip_longest
 
+from app.services import logs
 from app.services.conversion import convert_document, convert_pdf_pair
 from app.services.diffing import (
     find_diffs,
@@ -16,6 +18,8 @@ from app.services.diffing import (
     refine_fragments,
 )
 from app.services.llm import classify_fragments
+
+logger = logging.getLogger(__name__)
 
 STAGE_MESSAGES = {
     "converting": "Конвертация файлов...",
@@ -136,7 +140,10 @@ def run_pipeline(
             result["crops_truncated"] = conversion["crops_truncated"]
         job["result"] = result
         job["status"] = "done"
-    except Exception as exc:  # noqa: BLE001 — пайплайн обязан завершиться статусом
+    except Exception as exc:  # noqa: BLE001 — причина уходит в журнал
+        # Статус задачи живёт в памяти процесса и исчезает вместе с ним, поэтому
+        # причина сбоя остаётся только в журнале (spec: application-logging).
+        logs.log_error(logger, "Задача %s завершилась ошибкой", job_id)
         job["status"] = "failed"
         job["error"] = str(exc)
 
@@ -159,8 +166,8 @@ class ConversionProgress:
         self.done = 0
         self._report()
 
-    def __call__(self, image):
-        result = self._reader(image)
+    def __call__(self, image, page: int | None = None):
+        result = self._reader(image, page)
         self.done += 1
         self._report()
         return result

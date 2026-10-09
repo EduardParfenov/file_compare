@@ -33,8 +33,8 @@ class StubReader:
         self.pages = pages
         self.calls: list[int] = []
 
-    def __call__(self, image):
-        number = getattr(image, "number", None) or image
+    def __call__(self, image, page=None):
+        number = page if page is not None else (getattr(image, "number", None) or image)
         self.calls.append(number)
         text = self.pages.get(number, "")
         return PageReadResult(markdown=text, unreadable=not text.strip())

@@ -1,13 +1,19 @@
 """Application factory for file_compare."""
 
 import json
+import logging
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 from flask import Flask
 
 load_dotenv()
+
+DEFAULT_LOG_LEVEL = "WARNING"
+LOG_LEVEL_NAMES = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
+LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(funcName)s: %(message)s"
 
 
 def _read_version() -> str:
@@ -31,6 +37,29 @@ def _parse_llm_extra_body() -> dict | None:
     if not isinstance(data, dict):
         raise TypeError("LLM_EXTRA_BODY должен быть JSON-объектом")
     return data
+
+
+def configure_logging(raw_level: str | None) -> int:
+    """Настроить журнал: уровень из конфигурации, вывод в стандартный поток.
+
+    Неизвестное значение уровня не должно мешать запуску: используется уровень
+    по умолчанию, а о проблеме сообщается в сам журнал. Возвращается применённый
+    уровень. Содержимое документов и секреты в журнал не пишутся
+    (spec: application-logging).
+    """
+    name = (raw_level or "").strip().upper()
+    level = logging.getLevelName(name if name in LOG_LEVEL_NAMES else DEFAULT_LOG_LEVEL)
+    # basicConfig не трогает уже настроенные обработчики (в тестах их добавляет
+    # pytest), поэтому уровень выставляется явно.
+    logging.basicConfig(level=level, format=LOG_FORMAT, stream=sys.stderr)
+    logging.getLogger().setLevel(level)
+    if name and name not in LOG_LEVEL_NAMES:
+        logging.getLogger(__name__).warning(
+            "LOG_LEVEL=%s: неизвестный уровень журнала, применяется %s",
+            raw_level,
+            DEFAULT_LOG_LEVEL,
+        )
+    return level
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -65,11 +94,15 @@ def create_app(test_config: dict | None = None) -> Flask:
         PDF_CROPS_MAX_BYTES=int(
             os.environ.get("PDF_CROPS_MAX_BYTES", str(4 * 1024 * 1024))
         ),
+        # Журналирование (spec: application-logging)
+        LOG_LEVEL=os.environ.get("LOG_LEVEL", DEFAULT_LOG_LEVEL),
         APP_VERSION=_read_version(),
     )
 
     if test_config:
         app.config.from_mapping(test_config)
+
+    configure_logging(app.config["LOG_LEVEL"])
 
     os.makedirs(app.config["UPLOAD_DIR"], exist_ok=True)
 

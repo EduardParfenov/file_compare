@@ -310,8 +310,8 @@ def _reader_for(vision_chat):
     """Читатель страниц по переданной модели."""
     from app.services import vision_ocr
 
-    def reader(image):
+    def reader(image, page: int | None = None):
         model = getattr(vision_chat, "model_name", "") or ""
-        return vision_ocr.read_page(image, vision_chat, model=model)
+        return vision_ocr.read_page(image, vision_chat, model=model, page=page)
 
     return reader

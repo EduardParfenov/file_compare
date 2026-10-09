@@ -16,6 +16,7 @@ HTML вырождается в экранированный plain text.
 import base64
 import hashlib
 import html as html_module
+import logging
 import re
 
 from docx import Document
@@ -23,6 +24,10 @@ from docx.document import Document as _Document
 from docx.oxml.ns import qn
 from docx.table import Table
 from docx.text.paragraph import Paragraph
+
+from app.services import logs
+
+logger = logging.getLogger(__name__)
 
 
 class ConversionError(Exception):
@@ -115,7 +120,12 @@ def _paragraph_images(paragraph: Paragraph, budget: list[int]) -> list[dict]:
                 data_uri = "data:{};base64,{}".format(
                     part.content_type, base64.b64encode(blob).decode("ascii")
                 )
-            except Exception:  # noqa: BLE001, S112 — битое изображение не отменяет конвертацию
+            except Exception as exc:  # noqa: BLE001 — причина уходит в журнал
+                logs.log_warning(
+                    logger,
+                    "Изображение не извлечено из документа: %s",
+                    logs.failure_reason(exc),
+                )
                 continue
             if len(blob) > budget[0]:
                 budget[0] = 0

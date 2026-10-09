@@ -70,6 +70,15 @@ ruff check .           # линтер; правила заданы в pyproject.
 
 - Новая функциональность оформляется change-предложениями в
   `openspec/changes/` (см. `openspec/config.yaml`, схема spec-driven).
+- **Решения, принятые при реализации, показываются пользователю.** Если
+  реализация разошлась с артефактами change'а (proposal, specs, design,
+  tasks) или потребовала объёма работ, которого там нет, агент обязан
+  остановиться и показать: что обнаружено, какое решение принято, почему и
+  что меняется в артефактах. Молчаливая правка артефактов недопустима, даже
+  если новое решение технически вернее: правка — после явного согласия.
+- Правило продублировано в `openspec/config.yaml`: `rules.apply` (обязательно)
+  и `operations.apply.guidance` (как вести работу), поэтому оно действует и
+  вне этого файла.
 - Каждый `proposal.md` обязан содержать строку «уровень: несовместимое
   поведение» или «уровень: исправление» — при архивации версия проекта
   в файле `VERSION` повышается соответственно (major/patch).
@@ -83,6 +92,7 @@ ruff check .           # линтер; правила заданы в pyproject.
 - `REVIEW.md` — рецензия: покрытие тестами, расхождения спек и кода;
   при изменении поведения актуализировать.
 - `openspec/specs/` — спецификации возможностей (application-logging,
-  comparison-jobs, continuous-integration, diff-viewer, document-diff,
-  file-upload, llm-classification, markdown-conversion, page-image-diff,
-  pdf-conversion, project-version, release-process, vision-ocr).
+  change-implementation, comparison-jobs, continuous-integration, diff-viewer,
+  document-diff, file-upload, llm-classification, markdown-conversion,
+  page-image-diff, pdf-conversion, project-version, release-process,
+  vision-ocr).

@@ -7,10 +7,15 @@ difflib с признаком semantic=False.
 """
 
 import json
+import logging
 import re
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+
+from app.services import logs
+
+logger = logging.getLogger(__name__)
 
 VALID_LABELS = {"changed", "removed", "added"}
 
@@ -90,21 +95,41 @@ def _build_messages(fragment: dict) -> list:
     return [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=user)]
 
 
+def _fallback_label(opcode: str) -> str:
+    """Метка по опкоду difflib — единственный путь при недоступной модели."""
+    return FALLBACK_BY_OPCODE[opcode]
+
+
 def classify_fragment(fragment: dict, chat) -> dict:
     """Классифицирует фрагмент: {"label": ..., "semantic": bool}.
 
     chat — любая модель с методом invoke(messages) (в тестах — мок).
     """
     messages = _build_messages(fragment)
+    opcode = fragment["opcode"]
     for _attempt in range(2):  # основная попытка + один ретрай
         try:
             response = chat.invoke(messages)
-        except Exception:  # noqa: BLE001 — любой сбой chat-модели → деградация на фолбэк
-            break  # сбой сети/API — ретрай бессмысленен, сразу деградация
+        except Exception as exc:  # noqa: BLE001 — причина уходит в журнал
+            # сбой сети/API — ретрай бессмысленен, сразу деградация
+            logs.log_warning(
+                logger,
+                "Модель классификатора недоступна: %s; фрагмент классифицирован "
+                "как «%s» по опкоду difflib",
+                logs.failure_reason(exc),
+                _fallback_label(opcode),
+            )
+            return {"label": _fallback_label(opcode), "semantic": False}
         label = _extract_label(_content_to_text(getattr(response, "content", "")))
         if label:
             return {"label": label, "semantic": True}
-    return {"label": FALLBACK_BY_OPCODE[fragment["opcode"]], "semantic": False}
+    logs.log_warning(
+        logger,
+        "Модель классификатора вернула непригодный ответ, фрагмент "
+        "классифицирован как «%s» по опкоду difflib",
+        _fallback_label(opcode),
+    )
+    return {"label": _fallback_label(opcode), "semantic": False}
 
 
 def classify_fragments(fragments: list[dict], chat) -> tuple[list[dict], bool]:

@@ -10,12 +10,17 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import logging
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from PIL import Image
+
+from app.services import logs
+
+logger = logging.getLogger(__name__)
 
 # Инструкция модели. Версия входит в ключ кэша, поэтому её изменение
 # инвалидирует ранее прочитанные страницы (см. CACHE / clear_cache).
@@ -121,13 +126,20 @@ def read_page(
     model: str = "",
     prompt_version: str = PROMPT_VERSION,
     use_cache: bool = True,
+    page: int | None = None,
 ) -> PageReadResult:
     """Прочитать одну страницу: один запрос, одна страница.
 
     Кэш по содержимому страницы избавляет от повторного обращения к модели
     (повторное сравнение документов, общий неизменившийся лист).
+
+    `page` — номер страницы, известный вызывающему коду: он попадает в запись
+    журнала о неуспехе, чтобы деградацию можно было разобрать по страницам
+    (spec: application-logging). В журнал пишутся причина и номер страницы,
+    но не содержимое страницы и не параметры модели.
     """
     if chat is None:
+        logs.log_warning(logger, "Чтение страницы %s: модель не передана", page)
         return PageReadResult(markdown="", unreadable=True, degraded=True)
 
     payload, data_uri = encode_page(image)
@@ -139,16 +151,21 @@ def read_page(
 
     markdown = ""
     failed = False
+    reason = ""
     for _attempt in range(READ_ATTEMPTS):
         try:
             response = chat.invoke(_build_messages(data_uri))
-        except Exception:  # noqa: BLE001 — недоступность модели не отменяет задачу
+        except Exception as exc:  # noqa: BLE001 — сбой модели пишется в журнал
+            reason = f"ошибка обращения к модели: {logs.failure_reason(exc)}"
             failed = True
             continue
         markdown = _content_to_text(getattr(response, "content", ""))
         failed = not markdown.strip()
+        reason = "модель вернула ответ без содержимого" if failed else ""
         break
 
+    if failed:
+        logs.log_warning(logger, "Страница %s не прочитана: %s", page, reason)
     result = PageReadResult(markdown=markdown, unreadable=failed, degraded=failed)
     store_result(key, result)
     return result
@@ -168,14 +185,25 @@ def read_pages(
     with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
         futures = {
             pool.submit(
-                read_page, image, chat, model=model, prompt_version=prompt_version
+                read_page,
+                image,
+                chat,
+                model=model,
+                prompt_version=prompt_version,
+                page=number,
             ): number
             for number, image in images.items()
         }
         for future, number in futures.items():
             try:
                 results[number] = future.result()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 — причина уходит в журнал
+                logs.log_warning(
+                    logger,
+                    "Страница %s не прочитана: %s",
+                    number,
+                    logs.failure_reason(exc),
+                )
                 results[number] = PageReadResult(
                     markdown="", unreadable=True, degraded=True
                 )
@@ -215,8 +243,8 @@ def create_reader(config, chat=None):
         chat = create_chat_model(current_app.config, timeout=timeout)
     version = current_app.config.get("OCR_PROMPT_VERSION", PROMPT_VERSION)
 
-    def reader(image: Image.Image) -> PageReadResult:
-        return read_page(image, chat, model=model, prompt_version=version)
+    def reader(image: Image.Image, page: int | None = None) -> PageReadResult:
+        return read_page(image, chat, model=model, prompt_version=version, page=page)
 
     return reader
 
