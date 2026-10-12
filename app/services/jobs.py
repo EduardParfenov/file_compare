@@ -29,31 +29,38 @@ STAGE_MESSAGES = {
 
 _JOBS: dict[str, dict] = {}
 
+# Доступ к реестру задач потокобезопасен через _JOBS_LOCK: запись идёт из
+# потоков запросов и фонового потока пайплайна (spec: comparison-jobs).
+_JOBS_LOCK = threading.Lock()
+
 
 def create_job() -> str:
     job_id = uuid.uuid4().hex
-    _JOBS[job_id] = {
-        "id": job_id,
-        "status": "processing",  # processing | done | failed
-        "stage": None,
-        "stage_message": None,
-        "stage_progress": None,
-        "result": None,
-        "error": None,
-        "path_for_side": {},
-    }
+    with _JOBS_LOCK:
+        _JOBS[job_id] = {
+            "id": job_id,
+            "status": "processing",  # processing | done | failed
+            "stage": None,
+            "stage_message": None,
+            "stage_progress": None,
+            "result": None,
+            "error": None,
+            "path_for_side": {},
+        }
     return job_id
 
 
 def get_job(job_id: str) -> dict | None:
-    return _JOBS.get(job_id)
+    with _JOBS_LOCK:
+        return _JOBS.get(job_id)
 
 
 def set_stage(job_id: str, stage: str) -> None:
-    job = _JOBS[job_id]
-    job["stage"] = stage
-    job["stage_message"] = STAGE_MESSAGES[stage]
-    job["stage_progress"] = None
+    with _JOBS_LOCK:
+        job = _JOBS[job_id]
+        job["stage"] = stage
+        job["stage_message"] = STAGE_MESSAGES[stage]
+        job["stage_progress"] = None
 
 
 def set_progress(job_id: str, done: int, total: int) -> None:
@@ -62,17 +69,19 @@ def set_progress(job_id: str, done: int, total: int) -> None:
     Необязательная подробность: ключ этапа и сообщение не меняются, поэтому
     существующий клиент продолжает работать как раньше.
     """
-    job = _JOBS[job_id]
-    job["stage_progress"] = {"done": done, "total": total}
+    with _JOBS_LOCK:
+        _JOBS[job_id]["stage_progress"] = {"done": done, "total": total}
 
 
 def clear_progress(job_id: str) -> None:
-    _JOBS[job_id]["stage_progress"] = None
+    with _JOBS_LOCK:
+        _JOBS[job_id]["stage_progress"] = None
 
 
 def clear_jobs() -> None:
     """Очищает store (используется в тестах)."""
-    _JOBS.clear()
+    with _JOBS_LOCK:
+        _JOBS.clear()
 
 
 def start_job(
@@ -89,7 +98,8 @@ def start_job(
     `path_for_side` сохраняет пути файлов в задаче: они нужны, чтобы позже
     дочитать свёрнутые страницы по запросу пользователя.
     """
-    _JOBS[job_id]["path_for_side"] = dict(path_for_side or {})
+    with _JOBS_LOCK:
+        _JOBS[job_id]["path_for_side"] = dict(path_for_side or {})
     if synchronous:
         run_pipeline(job_id, path1, path2, chat, max_images_bytes)
     else:
@@ -105,7 +115,8 @@ def run_pipeline(
     job_id: str, path1: str, path2: str, chat, max_images_bytes: int | None = None
 ) -> None:
     """Конвертация → diff → классификация LLM → результат. Никогда не бросает."""
-    job = _JOBS[job_id]
+    with _JOBS_LOCK:
+        job = _JOBS[job_id]
     try:
         set_stage(job_id, "converting")
         conversion = _normalize(
@@ -138,14 +149,16 @@ def run_pipeline(
             result["pages"] = _page_summary(conversion)
             result["crops"] = conversion["crops"]
             result["crops_truncated"] = conversion["crops_truncated"]
-        job["result"] = result
-        job["status"] = "done"
+        with _JOBS_LOCK:
+            job["result"] = result
+            job["status"] = "done"
     except Exception as exc:  # noqa: BLE001 — причина уходит в журнал
         # Статус задачи живёт в памяти процесса и исчезает вместе с ним, поэтому
         # причина сбоя остаётся только в журнале (spec: application-logging).
         logs.log_error(logger, "Задача %s завершилась ошибкой", job_id)
-        job["status"] = "failed"
-        job["error"] = str(exc)
+        with _JOBS_LOCK:
+            job["status"] = "failed"
+            job["error"] = str(exc)
 
 
 class ConversionProgress:

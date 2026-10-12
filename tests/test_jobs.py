@@ -795,3 +795,35 @@ class TestOneSidedRowClassification:
         assert row["left"]["change"] == "changed"
         assert row["right"]["change"] == "changed"
         assert "segments" in row["left"]
+
+
+class TestRegistryConcurrency:
+    """Конкурентный доступ к реестру задач (spec: comparison-jobs)."""
+
+    def test_concurrent_create_job_all_ids_available(self):
+        # Дано 20 потоков одновременно создают задачи
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=20) as pool:
+            job_ids = list(pool.map(lambda _: jobs.create_job(), range(20)))
+        # То все идентификаторы уникальны и каждая задача доступна в реестре
+        assert len(set(job_ids)) == 20
+        for job_id in job_ids:
+            assert jobs.get_job(job_id) is not None
+            assert jobs.get_job(job_id)["status"] == "processing"
+
+    def test_concurrent_stage_updates_visible(self):
+        # Дано задача и 20 потоков, обновляющих прогресс
+        from concurrent.futures import ThreadPoolExecutor
+
+        job_id = jobs.create_job()
+
+        def report(index):
+            jobs.set_progress(job_id, index, 20)
+
+        with ThreadPoolExecutor(max_workers=20) as pool:
+            list(pool.map(report, range(20)))
+        # То финальное значение прогресса — одна из записей, без исключений
+        job = jobs.get_job(job_id)
+        assert job["stage_progress"] is not None
+        assert job["stage_progress"]["total"] == 20
