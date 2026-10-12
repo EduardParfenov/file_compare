@@ -127,6 +127,39 @@ class TestCache:
         assert key != vo.cache_key(b"other", "m", "v1")
         assert key != vo.cache_key(b"payload", "n", "v1")
 
+    def test_failure_not_cached(self):
+        """Неудача не сохраняется в кэше: после сбоя страница читается заново."""
+        chat = MockChat(
+            [ConnectionError("down")] * vo.READ_ATTEMPTS + ["# Восстановлено"]
+        )
+        image = page_image()
+        failed = vo.read_page(image, chat, model="m")
+        assert failed.unreadable is True
+
+        payload, _ = vo.encode_page(image)
+        key = vo.cache_key(payload, "m", vo.PROMPT_VERSION)
+        assert vo.cached_result(key) is None
+
+        recovered = vo.read_page(image, chat, model="m")
+        assert recovered.markdown == "# Восстановлено"
+        assert recovered.unreadable is False
+        assert chat.calls == vo.READ_ATTEMPTS + 1
+        assert vo.cached_result(key) is not None
+
+    def test_empty_answer_not_cached(self):
+        """Пустой ответ модели тоже не создаёт записи в кэше."""
+        chat = MockChat(["   ", "# Вторая попытка"])
+        image = page_image()
+        first = vo.read_page(image, chat, model="m")
+        assert first.unreadable is True
+
+        payload, _ = vo.encode_page(image)
+        key = vo.cache_key(payload, "m", vo.PROMPT_VERSION)
+        assert vo.cached_result(key) is None
+
+        second = vo.read_page(image, chat, model="m")
+        assert second.markdown == "# Вторая попытка"
+
 
 class TestDegradation:
     def test_model_unavailable_marks_page_unreadable(self):

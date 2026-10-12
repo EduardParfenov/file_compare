@@ -135,7 +135,9 @@ def read_page(
     """Прочитать одну страницу: один запрос, одна страница.
 
     Кэш по содержимому страницы избавляет от повторного обращения к модели
-    (повторное сравнение документов, общий неизменившийся лист).
+    (повторное сравнение документов, общий неизменившийся лист); в кэш
+    попадают только успешные результаты — неудача при следующем
+    обращении приводит к новому запросу (spec: vision-ocr).
 
     `page` — номер страницы, известный вызывающему коду: он попадает в запись
     журнала о неуспехе, чтобы деградацию можно было разобрать по страницам
@@ -170,7 +172,10 @@ def read_page(
 
     if failed:
         logs.log_warning(logger, "Страница %s не прочитана: %s", page, reason)
-    result = PageReadResult(markdown=markdown, unreadable=failed, degraded=failed)
+        # Неудача не кэшируется (spec: vision-ocr): transient-сбой не должен
+        # превращаться в перманентную деградацию до рестарта процесса.
+        return PageReadResult(markdown=markdown, unreadable=True, degraded=True)
+    result = PageReadResult(markdown=markdown, unreadable=False, degraded=False)
     store_result(key, result)
     return result
 
