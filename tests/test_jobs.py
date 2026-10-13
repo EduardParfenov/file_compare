@@ -136,6 +136,45 @@ class TestStartCompare:
             assert response.status_code == 400
             assert "error" in response.get_json()
 
+    def test_mixed_format_pair_returns_400(self, make_app):
+        # Дано загружены файлы разных форматов: .docx и .pdf
+        app = make_app(MockChat([]))
+        client = app.test_client()
+        id1 = upload_docx(client, "contract_v1.docx", ["А"])
+        response = client.post(
+            "/api/upload",
+            data={"file": (io.BytesIO(b"%PDF-1.4"), "contract_v2.pdf")},
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 200
+        id2 = response.get_json()["upload_id"]
+
+        # Когда клиент запускает сравнение
+        response = client.post(
+            "/api/compare", json={"upload_id_1": id1, "upload_id_2": id2}
+        )
+
+        # То ответ 400 с текстом об одном формате и без создания задачи
+        assert response.status_code == 400
+        assert "одного формата" in response.get_json()["error"]
+        assert len(jobs._JOBS) == 0
+
+    def test_same_extension_different_case_returns_202(self, make_app):
+        # Дано пара с одинаковым расширением в разном регистре
+        app = make_app(MockChat([]))
+        client = app.test_client()
+        id1 = upload_docx(client, "report_v1.DOCX", ["А", "Б"])
+        id2 = upload_docx(client, "report_v2.docx", ["А", "Х"])
+
+        # Когда клиент запускает сравнение
+        response = client.post(
+            "/api/compare", json={"upload_id_1": id1, "upload_id_2": id2}
+        )
+
+        # То ответ 202 с job_id — регистр расширения не мешает
+        assert response.status_code == 202
+        assert response.get_json()["job_id"]
+
 
 class TestJobStatus:
     def test_threaded_job_pipeline_sets_stages_and_completes(self, tmp_path):

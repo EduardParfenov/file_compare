@@ -1,5 +1,7 @@
 """HTTP routes."""
 
+import os
+
 from flask import Blueprint, current_app, jsonify, render_template, request
 
 from app.services import jobs, llm, uploads
@@ -59,6 +61,9 @@ def compare():
     path2 = uploads.get_upload_path(upload_id_2)
     if path1 is None or path2 is None:
         return jsonify({"error": "Файл с указанным upload_id не найден"}), 404
+
+    if os.path.splitext(path1)[1].lower() != os.path.splitext(path2)[1].lower():
+        return jsonify({"error": "Сравнивать можно только файлы одного формата"}), 400
 
     job_id = jobs.create_job()
     jobs.start_job(
