@@ -2,6 +2,9 @@
 
 // Состояние загрузок: slot (1|2) -> upload_id
 const uploads = { 1: null, 2: null };
+// Расширения загруженных файлов: slot (1|2) -> ".ext" в нижнем регистре
+const extensions = { 1: null, 2: null };
+const FORMAT_MISMATCH_MESSAGE = "Сравнивать можно только файлы одного формата";
 const POLL_INTERVAL_MS = 1000;
 // Идентификатор текущей задачи: нужен для раскрытия диапазонов страниц
 let currentJobId = null;
@@ -35,7 +38,21 @@ function clearMessages() {
 }
 
 function updateCompareButton() {
-    els.compare.disabled = !(uploads[1] && uploads[2]);
+    if (!(uploads[1] && uploads[2])) {
+        els.compare.disabled = true;
+        return;
+    }
+    if (extensions[1] !== extensions[2]) {
+        els.compare.disabled = true;
+        showError(FORMAT_MISMATCH_MESSAGE);
+        return;
+    }
+    els.compare.disabled = false;
+}
+
+function extensionOf(filename) {
+    const dot = filename.lastIndexOf(".");
+    return dot === -1 ? "" : filename.slice(dot).toLowerCase();
 }
 
 async function uploadFile(slot, file) {
@@ -55,6 +72,7 @@ async function uploadFile(slot, file) {
         return;
     }
     uploads[slot] = body.upload_id;
+    extensions[slot] = extensionOf(body.filename || "");
     els.names[slot].textContent = body.filename;
     els.zones[slot].classList.add("loaded");
     updateCompareButton();
