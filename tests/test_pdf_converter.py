@@ -6,6 +6,8 @@
 """
 
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -13,6 +15,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent))
 from pdf_fixtures import write_scan_pdf, write_text_pdf
 
+from app import create_app
+from app.services import conversion, page_image_diff
 from app.services import pdf_converter as pc
 from app.services.diffing import is_table_row, parse_table_row
 from app.services.vision_ocr import PageReadResult
@@ -238,3 +242,96 @@ class TestScanBranch:
         first = pc.convert_pdf_by_reading("scan.pdf", reader, images(1))
         second = pc.convert_pdf_by_reading("scan.pdf", reader, images(1))
         assert first == second
+
+
+class _StubChat:
+    def __init__(self, content="# страница"):
+        self.content = content
+        self.calls = 0
+
+    def invoke(self, messages):
+        self.calls += 1
+        from types import SimpleNamespace
+
+        return SimpleNamespace(content=self.content)
+
+
+class TestConfigWiring:
+    def test_crops_max_bytes_passed_to_crop_formation(self, tmp_path, monkeypatch):
+        path1 = write_scan_pdf(tmp_path / "a.pdf", [[(30, 300, "Report 2024")]])
+        path2 = write_scan_pdf(tmp_path / "b.pdf", [[(30, 300, "Report 2025")]])
+        captured = {}
+
+        def fake_crops_for_pair(old, new, limit_bytes):
+            captured["limit_bytes"] = limit_bytes
+            return [], False
+
+        monkeypatch.setattr(
+            "app.services.page_image_diff.crops_for_pair", fake_crops_for_pair
+        )
+        conversion.convert_pdf_pair(path1, path2, crops_max_bytes=12345)
+        assert captured["limit_bytes"] == 12345
+
+    def test_pdf_render_dpi_from_config(self, tmp_path):
+        app = create_app({"PDF_RENDER_DPI": "300"})
+        with app.app_context():
+            assert conversion._pdf_render_dpi() == 300
+
+    def test_pdf_render_dpi_default_matches_default_dpi(self):
+        app = create_app({})
+        with app.app_context():
+            assert conversion._pdf_render_dpi() == page_image_diff.DEFAULT_DPI
+
+    def test_reader_passes_ocr_prompt_version_from_config(self, monkeypatch):
+        app = create_app({"OCR_PROMPT_VERSION": "v9"})
+        seen = {}
+
+        def fake_read_page(image, chat, model="", prompt_version="v2", page=None):
+            seen["prompt_version"] = prompt_version
+            return PageReadResult(markdown="# x", unreadable=False)
+
+        monkeypatch.setattr("app.services.vision_ocr.read_page", fake_read_page)
+        with app.app_context():
+            reader = conversion._reader_for(_StubChat())
+            reader(object(), 1)
+        assert seen["prompt_version"] == "v9"
+
+    def test_ocr_concurrency_from_config(self, monkeypatch):
+        app = create_app({"OCR_CONCURRENCY": "3"})
+        with app.app_context():
+            assert conversion._ocr_concurrency() == 3
+
+    def test_convert_pdf_by_reading_reads_concurrently(self, monkeypatch):
+        max_concurrent = 0
+        current = 0
+        lock = threading.Lock()
+        calls = []
+
+        def reader(image, page=None):
+            nonlocal max_concurrent, current
+            with lock:
+                current += 1
+                max_concurrent = max(max_concurrent, current)
+            calls.append(page)
+            time.sleep(0.01)
+            with lock:
+                current -= 1
+            return PageReadResult(markdown="# страница", unreadable=False)
+
+        pages = pc.convert_pdf_by_reading(
+            "scan.pdf", reader, images(1, 2, 3, 4, 5), concurrency=3
+        )
+        assert [block["page"] for block in pages] == [1, 2, 3, 4, 5]
+        assert sorted(calls) == [1, 2, 3, 4, 5]
+        assert max_concurrent > 1, "ожидалось конкурентное чтение при concurrency > 1"
+
+    def test_convert_pdf_by_reading_sequential_by_default(self):
+        calls = []
+
+        def reader(image, page=None):
+            calls.append(page)
+            return PageReadResult(markdown="# страница", unreadable=False)
+
+        pages = pc.convert_pdf_by_reading("scan.pdf", reader, images(1, 2, 3))
+        assert [block["page"] for block in pages] == [1, 2, 3]
+        assert calls == [1, 2, 3]

@@ -72,6 +72,7 @@ def compare():
         path2,
         _get_chat(),
         max_images_bytes=current_app.config["MAX_IMAGES_TOTAL_BYTES"],
+        crops_max_bytes=current_app.config["PDF_CROPS_MAX_BYTES"],
         synchronous=current_app.config.get("JOBS_SYNCHRONOUS", False),
         path_for_side={1: path1, 2: path2},
     )

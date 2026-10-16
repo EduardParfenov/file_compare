@@ -70,6 +70,37 @@ def _convert_pdf(path: str, max_images_bytes: int | None, vision_chat):
     return pdf_converter.convert_pdf_by_reading(path, _reader_for(vision_chat), images)
 
 
+def _pdf_render_dpi() -> int:
+    """Разрешение рендера страниц PDF из конфига, DEFAULT_DPI по умолчанию.
+
+    Вне контекста приложения (тесты сервиса без create_app) используется
+    значение по умолчанию — так же, как в read_page_range.
+    """
+    from app.services import page_image_diff
+
+    dpi = page_image_diff.DEFAULT_DPI
+    try:
+        from flask import current_app
+
+        dpi = int(current_app.config.get("PDF_RENDER_DPI", dpi))
+    except RuntimeError:
+        pass
+    return dpi
+
+
+def _ocr_concurrency() -> int:
+    """Число одновременных запросов к модели при чтении страниц (OCR_CONCURRENCY).
+
+    Вне контекста приложения используется 1 — последовательное чтение как раньше.
+    """
+    try:
+        from flask import current_app
+
+        return int(current_app.config.get("OCR_CONCURRENCY", 1))
+    except RuntimeError:
+        return 1
+
+
 def convert_pdf_pair(
     path1: str,
     path2: str,
@@ -100,8 +131,9 @@ def convert_pdf_pair(
             pdf_converter,
         )
 
-    old_pages = page_image_diff.load_pages(path1)
-    new_pages = page_image_diff.load_pages(path2)
+    dpi = _pdf_render_dpi()
+    old_pages = page_image_diff.load_pages(path1, dpi=dpi)
+    new_pages = page_image_diff.load_pages(path2, dpi=dpi)
     alignment = page_image_diff.align_pages(old_pages, new_pages)
 
     pages_old = alignment.pages_to_read_old
@@ -109,9 +141,14 @@ def convert_pdf_pair(
     base_reader = _reader_for(vision_chat) if vision_chat is not None else None
     reader = _progress_reader(base_reader, len(pages_old) + len(pages_new), job_id)
 
+    concurrency = _ocr_concurrency()
     degraded: set[int] = set()
-    blocks1 = _side_blocks(pdf_converter, path1, reader, old_pages, pages_old, degraded)
-    blocks2 = _side_blocks(pdf_converter, path2, reader, new_pages, pages_new, degraded)
+    blocks1 = _side_blocks(
+        pdf_converter, path1, reader, old_pages, pages_old, degraded, concurrency
+    )
+    blocks2 = _side_blocks(
+        pdf_converter, path2, reader, new_pages, pages_new, degraded, concurrency
+    )
 
     crops, truncated = _collect_crops(old_pages, new_pages, alignment, crops_max_bytes)
 
@@ -176,6 +213,16 @@ def read_page_range(
 
     if not numbers:
         return []
+
+    # Если у документа есть текстовый слой, читаем запрошенные страницы
+    # детерминированно без модели (spec: pdf-conversion, «Раскрытие диапазона
+    # использует текстовой слой при наличии»). Иначе — платный вызов visión
+    # модели за текст, который уже лежит в файле.
+    if pdf_converter.has_text_layer(path):
+        all_blocks = pdf_converter.convert_pdf_text_layer(path)
+        wanted_numbers = set(numbers)
+        return [block for block in all_blocks if block.get("page") in wanted_numbers]
+
     if vision_chat is None:
         raise PageExpansionError("Модель для чтения страниц недоступна")
 
@@ -225,8 +272,9 @@ def _pdf_pair_with_text_layer(
     blocks2 = pdf_converter.convert_pdf_text_layer(
         path2, max_images_bytes=max_images_bytes
     )
-    old_pages = page_image_diff.load_pages(path1)
-    new_pages = page_image_diff.load_pages(path2)
+    dpi = _pdf_render_dpi()
+    old_pages = page_image_diff.load_pages(path1, dpi=dpi)
+    new_pages = page_image_diff.load_pages(path2, dpi=dpi)
     alignment = page_image_diff.align_pages(old_pages, new_pages)
     crops, truncated = _collect_crops(old_pages, new_pages, alignment, crops_max_bytes)
     # Текст совпавших страниц не участвует в сравнении — так же, как в ветке
@@ -271,14 +319,25 @@ def _drop_unchanged_pages(blocks: list[dict], pages: set[int]) -> list[dict]:
 
 
 def _side_blocks(
-    pdf_converter, path, reader, pages, pages_to_read, degraded: set[int]
+    pdf_converter,
+    path,
+    reader,
+    pages,
+    pages_to_read,
+    degraded: set[int],
+    concurrency: int = 1,
 ) -> list[dict]:
     """Блоки одной стороны по страницам, подлежащим чтению."""
     if reader is None:
         return []
     images = {page.number: page.image for page in pages}
     return pdf_converter.convert_pdf_by_reading(
-        path, reader, images, pages_to_read=pages_to_read, degraded_pages=degraded
+        path,
+        reader,
+        images,
+        pages_to_read=pages_to_read,
+        degraded_pages=degraded,
+        concurrency=concurrency,
     )
 
 
@@ -306,12 +365,32 @@ def _collect_crops(old_pages, new_pages, alignment, limit_bytes: int):
     return crops, truncated
 
 
-def _reader_for(vision_chat):
-    """Читатель страниц по переданной модели."""
+def _reader_for(vision_chat, prompt_version: str | None = None):
+    """Читатель страниц по переданной модели.
+
+    `prompt_version` берётся из конфигурации (`OCR_PROMPT_VERSION`), если не
+    передан явно — так версия инструкции попадает в ключ кэша и инвалидирует
+    ранее прочитанные страницы при изменении инструкции.
+    """
     from app.services import vision_ocr
+
+    if prompt_version is None:
+        prompt_version = vision_ocr.PROMPT_VERSION
+        try:
+            from flask import current_app
+
+            prompt_version = current_app.config.get(
+                "OCR_PROMPT_VERSION", prompt_version
+            )
+        except RuntimeError:
+            # Вне контекста приложения (тесты сервиса без create_app)
+            # используется версия по умолчанию.
+            pass
 
     def reader(image, page: int | None = None):
         model = getattr(vision_chat, "model_name", "") or ""
-        return vision_ocr.read_page(image, vision_chat, model=model, page=page)
+        return vision_ocr.read_page(
+            image, vision_chat, model=model, prompt_version=prompt_version, page=page
+        )
 
     return reader
