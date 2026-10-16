@@ -7,7 +7,7 @@ import pytest
 from docx import Document
 
 sys.path.insert(0, str(Path(__file__).parent))
-from pdf_fixtures import write_scan_pdf
+from pdf_fixtures import write_scan_pdf, write_text_pdf
 
 from app.services import conversion, jobs
 
@@ -160,6 +160,36 @@ class TestExpandSuccess:
         )
         assert response.status_code == 409
         assert "Не удалось прочитать" in response.get_json()["error"]
+
+
+class TestExpandNativeTextLayer:
+    """Раскрытие диапазона у rodnogo PDF не должно вызывать модель (F4)."""
+
+    def test_expand_native_pdf_without_model(self, client, tmp_path, app):
+        path1 = write_text_pdf(
+            tmp_path / "a.pdf", [[(30, 300, "Report Page One")], [(30, 300, "Two")]]
+        )
+        path2 = write_text_pdf(
+            tmp_path / "b.pdf", [[(30, 300, "Report Page One")], [(30, 300, "Two")]]
+        )
+        upload1 = upload(client, app, path1)
+        upload2 = upload(client, app, path2)
+        response = client.post(
+            "/api/compare", json={"upload_id_1": upload1, "upload_id_2": upload2}
+        )
+        job_id = response.get_json()["job_id"]
+        status = client.get(f"/api/jobs/{job_id}").get_json()["status"]
+        assert status == "done", "задача должна завершиться без модели"
+
+        response = client.post(
+            f"/api/jobs/{job_id}/pages",
+            json={"side": "left", "first": 1, "last": 2},
+        )
+        assert response.status_code == 200, response.get_json()
+        body = response.get_json()
+        assert [block["page"] for block in body["pages"]] == [1, 2]
+        assert body["pages"][0]["text"]
+        assert body["pages"][1]["text"]
 
 
 def _stub_chat():

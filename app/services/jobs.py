@@ -90,6 +90,7 @@ def start_job(
     path2: str,
     chat,
     max_images_bytes: int | None = None,
+    crops_max_bytes: int | None = None,
     synchronous: bool = False,
     path_for_side: dict[int, str] | None = None,
 ) -> None:
@@ -101,18 +102,23 @@ def start_job(
     with _JOBS_LOCK:
         _JOBS[job_id]["path_for_side"] = dict(path_for_side or {})
     if synchronous:
-        run_pipeline(job_id, path1, path2, chat, max_images_bytes)
+        run_pipeline(job_id, path1, path2, chat, max_images_bytes, crops_max_bytes)
     else:
         thread = threading.Thread(
             target=run_pipeline,
-            args=(job_id, path1, path2, chat, max_images_bytes),
+            args=(job_id, path1, path2, chat, max_images_bytes, crops_max_bytes),
             daemon=True,
         )
         thread.start()
 
 
 def run_pipeline(
-    job_id: str, path1: str, path2: str, chat, max_images_bytes: int | None = None
+    job_id: str,
+    path1: str,
+    path2: str,
+    chat,
+    max_images_bytes: int | None = None,
+    crops_max_bytes: int | None = None,
 ) -> None:
     """Конвертация → diff → классификация LLM → результат. Никогда не бросает."""
     with _JOBS_LOCK:
@@ -120,7 +126,14 @@ def run_pipeline(
     try:
         set_stage(job_id, "converting")
         conversion = _normalize(
-            convert_pair(path1, path2, chat, max_images_bytes, job_id=job_id)
+            convert_pair(
+                path1,
+                path2,
+                chat,
+                max_images_bytes,
+                crops_max_bytes=crops_max_bytes,
+                job_id=job_id,
+            )
         )
 
         set_stage(job_id, "diffing")
@@ -195,6 +208,7 @@ def convert_pair(
     path2: str,
     chat,
     max_images_bytes: int | None,
+    crops_max_bytes: int | None = None,
     job_id: str | None = None,
 ) -> dict:
     """Конвертация двух документов.
@@ -209,6 +223,7 @@ def convert_pair(
             path2,
             vision_chat=chat,
             max_images_bytes=max_images_bytes,
+            crops_max_bytes=crops_max_bytes,
             job_id=job_id,
         )
     return {

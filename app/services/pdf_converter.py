@@ -398,12 +398,15 @@ def convert_pdf_by_reading(
     page_images: dict[int, object],
     pages_to_read: list[int] | None = None,
     degraded_pages: set[int] | None = None,
+    concurrency: int = 1,
 ) -> list[dict]:
     """Ветка сканирования: страницы -> markdown -> блоки.
 
     `page_images` — подготовленные изображения страниц документа.
     `pages_to_read` — номера страниц, которые нужно прочитать (остальные
     считаются совпавшими визуально и на чтение не отправляются).
+    `concurrency` — число одновременных запросов к модели; при 1 читает
+    последовательно как раньше, при более 1 — параллельно через пул потоков.
     """
     if degraded_pages is None:
         degraded_pages = set()
@@ -412,11 +415,23 @@ def convert_pdf_by_reading(
 
     results = {}
     if pages_to_read:
-        results = {
-            number: reader(page_images[number], number)
-            for number in pages_to_read
-            if number in page_images
-        }
+        if concurrency > 1:
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=concurrency) as pool:
+                futures = {
+                    pool.submit(reader, page_images[number], number): number
+                    for number in pages_to_read
+                    if number in page_images
+                }
+                for future, number in futures.items():
+                    results[number] = future.result()
+        else:
+            results = {
+                number: reader(page_images[number], number)
+                for number in pages_to_read
+                if number in page_images
+            }
 
     blocks: list[dict] = []
     for number in sorted(page_images):
