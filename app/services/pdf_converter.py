@@ -24,6 +24,7 @@ import re
 import pdfplumber
 
 from app.services import logs
+from app.services.diffing import is_table_row
 from app.services.docx_converter import wrap_text_html
 
 logger = logging.getLogger(__name__)
@@ -148,26 +149,39 @@ def _table_cells(text: str) -> list[str]:
 
 
 def build_block(
-    text: str, tag: str, page: int | None = None, crops: list[str] | None = None
+    text: str,
+    tag: str,
+    page: int | None = None,
+    crops: list[str] | None = None,
+    cells: list[str] | None = None,
 ) -> dict:
     """Собрать блок документа с согласованными текстом и HTML.
 
     HTML строится из текста приложением; при невозможности сохранить текст
     используется plain text — расхождение html и text недопустимо, от него
     зависит вплетение пословного diff на клиенте.
-    """
-    html = wrap_text_html(tag, text)
-    from app.services.diffing import is_table_row
 
-    if is_table_row(text):
-        cells = _table_cells(text)
+    Для строк таблиц (tag == "tr") можно передать `cells` — список текстов
+    ячеек. Тогда HTML стротся из этих ячеек, а не из парсинга текста, и
+    поле `cells` сохраняется в блоке для фронтенда.
+    """
+    if cells is not None and is_table_row(text):
         html = "".join(f"<td>{html_module.escape(cell)}</td>" for cell in cells)
+    else:
+        html = wrap_text_html(tag, text)
+        if is_table_row(text):
+            parsed_cells = _table_cells(text)
+            html = "".join(
+                f"<td>{html_module.escape(cell)}</td>" for cell in parsed_cells
+            )
 
     block = {"text": text, "html": html, "images": []}
     if page is not None:
         block["page"] = page
     if crops:
         block["crops"] = list(crops)
+    if cells is not None:
+        block["cells"] = list(cells)
     return block
 
 
@@ -258,20 +272,33 @@ def _embedded_images(
     return images
 
 
-def _page_lines(page) -> list[tuple[float, str]]:
-    """Строки страницы с вертикальной координатой, по которым собираются абзацы.
+def _word_in_table_cells(
+    word: dict,
+    table_cell_bboxes: list[tuple[float, float, float, float]],
+) -> bool:
+    """Проверяет, попадает ли центр слова в любую ячейку таблицы."""
+    wx = (word["x0"] + word["x1"]) / 2
+    wy = (word["top"] + word["bottom"]) / 2
+    for cx0, cy0, cx1, cy1 in table_cell_bboxes:
+        if cx0 <= wx <= cx1 and cy0 <= wy <= cy1:
+            return True
+    return False
 
-    Разбиение на абзацы по пустым вертикальным промежуткам: у текстового слоя
-    нет явной разметки абзацев, а разрывы строк внутри абзаца и между
-    абзацами отличаются величиной интервала.
+
+def _page_lines(page, words=None) -> list[tuple[float, str]]:
+    """Слова страницы, сгруппированные в абзацы по вертикальному зазору.
+
+    Если `words` передан, используется он вместо извлечения со страницы.
+    Возвращает список (top, text) для каждого абзаца.
     """
-    try:
-        words = page.extract_words(use_text_flow=False)
-    except Exception as exc:  # noqa: BLE001 — причина уходит в журнал
-        logs.log_warning(
-            logger, "Строки страницы не разобраны: %s", logs.failure_reason(exc)
-        )
-        return []
+    if words is None:
+        try:
+            words = page.extract_words(use_text_flow=False)
+        except Exception as exc:  # noqa: BLE001 — причина уходит в журнал
+            logs.log_warning(
+                logger, "Строки страницы не разобраны: %s", logs.failure_reason(exc)
+            )
+            return []
     if not words:
         return []
 
@@ -297,13 +324,16 @@ def _page_lines(page) -> list[tuple[float, str]]:
         previous_bottom = max(word["bottom"] for word in line_words)
     if buffer:
         paragraphs.append(_merge_lines(buffer))
+
     return paragraphs
 
 
-def _merge_lines(lines: list[tuple[float, list[dict]]]) -> tuple[float, str]:
-    top = lines[0][0]
+def _merge_lines(
+    lines: list[tuple[float, list[dict]]],
+) -> tuple[float, str]:
     text = "\n".join(" ".join(word["text"] for word in line) for _, line in lines)
-    return top, _clean(text)
+    text = _clean(text)
+    return lines[0][0], text
 
 
 def _heading_tag(text: str) -> str:
@@ -326,6 +356,11 @@ def convert_pdf_text_layer(
     """Ветка текстового слоя: абзацы, строки таблиц, изображения, координаты.
 
     Детерминирована и не обращается к моделям.
+
+    Таблицы извлекаются через pdfplumber `table.extract()`, который корректно
+    обрабатывает объединённые ячейки и вертикальный текст. Абзацы берутся из
+    слов, не попадающих в ячейки таблиц. Все блоки (таблицы и абзацы)
+    объединяются в порядке следования по вертикали.
     """
     if max_images_bytes is None:
         max_images_bytes = 10 * 1024 * 1024
@@ -335,6 +370,8 @@ def convert_pdf_text_layer(
     with _open(path) as pdf:
         for index, page in enumerate(pdf.pages, start=1):
             images = _embedded_images(page, budget, index)
+
+            # --- Таблицы: извлекаем через table.extract() ---
             try:
                 tables = page.find_tables()
             except Exception as exc:  # noqa: BLE001 — причина уходит в журнал
@@ -345,31 +382,73 @@ def convert_pdf_text_layer(
                     logs.failure_reason(exc),
                 )
                 tables = []
-            table_bboxes = [
-                tuple(table.bbox) for table in tables if table.bbox is not None
-            ]
 
-            for top, text in _page_lines(page):
+            # BBox всех ячеек для фильтрации слов из абзацев
+            table_cell_bboxes: list[tuple[float, float, float, float]] = []
+            for table in tables:
+                try:
+                    for table_row in table.rows:
+                        for cell in table_row.cells:
+                            if cell is not None:
+                                table_cell_bboxes.append(tuple(cell))
+                except Exception as exc:  # noqa: BLE001 — причина уходит в журнал
+                    logs.log_warning(
+                        logger,
+                        "Страница %s: не удалось извлечь bbox ячеек таблицы: %s",
+                        index,
+                        logs.failure_reason(exc),
+                    )
+
+            # Блоки таблиц: (top, block_dict)
+            table_items: list[tuple[float, dict]] = []
+            for table in tables:
+                try:
+                    extracted = table.extract()
+                    for ri, table_row in enumerate(table.rows):
+                        if ri >= len(extracted):
+                            continue
+                        row_cells = [c for c in table_row.cells if c is not None]
+                        if not row_cells:
+                            continue
+                        row_top = min(c[1] for c in row_cells)
+
+                        cells_text = [c or "" for c in extracted[ri]]
+                        if not any(c.strip() for c in cells_text):
+                            continue
+
+                        text = "| " + " | ".join(cells_text) + " |"
+                        block = build_block(text, "tr", page=index, cells=cells_text)
+                        table_items.append((row_top, block))
+                except Exception as exc:  # noqa: BLE001 — причина уходит в журнал
+                    logs.log_warning(
+                        logger,
+                        "Страница %s: не удалось извлечь строки таблицы: %s",
+                        index,
+                        logs.failure_reason(exc),
+                    )
+
+            # Абзацы: слова вне ячеек таблиц, сгруппированные по вертикали
+            words = page.extract_words(use_text_flow=False)
+            non_table_words = [
+                w for w in words if not _word_in_table_cells(w, table_cell_bboxes)
+            ]
+            paragraph_items: list[tuple[float, dict]] = []
+            for top, text in _page_lines(page, words=non_table_words):
                 if not text:
                     continue
-
-                if any(x0 <= 1 and y0 <= top <= y1 for x0, y0, _x1, y1 in table_bboxes):
-                    row_text = _table_row_text(text)
-                    if row_text:
-                        blocks.append(build_block(row_text, "tr", page=index))
-                    continue
-
                 block = build_block(text, _heading_tag(text), page=index)
                 block["words"] = _word_boxes(page, (0, top, page.width, top + 14))
+                paragraph_items.append((top, block))
+
+            # Слияние таблиц и абзацев по вертикальной позиции
+            all_items = table_items + paragraph_items
+            all_items.sort(key=lambda item: item[0])
+            for _, block in all_items:
                 blocks.append(block)
 
             if images:
                 target = next(
-                    (
-                        block
-                        for block in blocks
-                        if block.get("page") == index and not block["images"]
-                    ),
+                    (b for b in blocks if b.get("page") == index and not b["images"]),
                     None,
                 )
                 if target is None:
@@ -379,7 +458,7 @@ def convert_pdf_text_layer(
                 else:
                     target["images"] = images
 
-    return [block for block in blocks if block["text"] or block["images"]]
+    return [b for b in blocks if b["text"] or b["images"]]
 
 
 def _table_row_text(text: str) -> str:

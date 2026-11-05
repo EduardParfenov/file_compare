@@ -437,7 +437,13 @@ def _side_change(label: str, side: str) -> str | None:
 
 def _enrich_table_block(block: dict) -> None:
     """Добавляет структуру таблицы: cells для строк данных, sep для
-    служебной строки-разделителя (она не отображается как данные)."""
+    служебной строки-разделителя (она не отображается как данные).
+
+    Если `cells` уже заполнены конвертером (например, PDF с текстовым слоем),
+    не пере-parсит их из текста.
+    """
+    if block.get("cells") is not None:
+        return
     text = block["text"]
     if not is_table_row(text):
         return
@@ -472,6 +478,8 @@ def _row_side(block: dict, change: str | None) -> dict:
         side["page"] = block["page"]
     if block.get("words"):
         side["words"] = block["words"]
+    if block.get("cells") is not None:
+        side["cells"] = block["cells"]
     _enrich_table_block(side)
     return side
 

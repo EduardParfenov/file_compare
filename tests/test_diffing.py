@@ -51,6 +51,17 @@ class TestNormalizeBlocks:
         assert block["html"] == "<p> А </p>"
         assert block["images"] == [image]
 
+    def test_cells_preserved_in_normalization(self):
+        # Поле `cells` копируется без изменений, не пере-parсится из текста
+        block = make_block("| Товар | Цена |")
+        block["cells"] = ["Товар", "Цена"]
+        block["html"] = "<td>Товар</td><td>Цена</td>"
+        block["tag"] = "tr"
+        (normalized,) = normalize_blocks([block])
+        assert normalized["cells"] == ["Товар", "Цена"]
+        assert normalized["tag"] == "tr"
+        assert normalized["html"] == "<td>Товар</td><td>Цена</td>"
+
 
 class TestFindDiffs:
     def test_identical_documents(self):
