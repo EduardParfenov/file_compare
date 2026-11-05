@@ -99,7 +99,7 @@ class TestTextLayerBlocks:
         )
         blocks = pc.convert_pdf_text_layer(path)
         texts = [block["text"] for block in blocks]
-        assert "First paragraph line second paragraph line" in texts
+        assert "First paragraph line\nsecond paragraph line" in texts
         assert "Second page content" in texts
         assert [block["page"] for block in blocks][-1] == 2
 
