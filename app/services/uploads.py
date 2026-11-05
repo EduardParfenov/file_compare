@@ -11,6 +11,13 @@ import uuid
 _UPLOADS: dict[str, str] = {}
 _UPLOADS_LOCK = threading.Lock()
 
+# Магические байты (сигнатуры) поддерживаемых форматов.
+# Проверяются первые байты файла независимо от расширения имени.
+MAGIC_BYTES: dict[str, bytes] = {
+    ".docx": b"PK\x03\x04",  # DOCX — это ZIP-архив
+    ".pdf": b"%PDF",
+}
+
 
 class UploadError(Exception):
     """Ошибка валидации загружаемого файла."""
@@ -24,12 +31,27 @@ def save_upload(file_storage, upload_dir: str, allowed_extensions: set[str]) -> 
     принимаются, если расширение входит в allowed_extensions. На диск файл
     кладётся как upload_id + расширение; filename в ответе — исходное имя
     (spec: file-upload). Бросает UploadError при неподдерживаемом
-    расширении.
+    расширении или при несовпадении магических байт содержимого с
+    заявленным расширением.
     """
     original_name = file_storage.filename or ""
     ext = os.path.splitext(original_name)[1].lower()
     if not ext or ext not in allowed_extensions:
         raise UploadError(f"Неподдерживаемый формат файла: {ext or 'без расширения'}")
+
+    expected = MAGIC_BYTES.get(ext)
+    if expected is not None:
+        stream = file_storage.stream
+        try:
+            stream.seek(0)
+            head = stream.read(len(expected))
+            stream.seek(0)
+        except (OSError, AttributeError):
+            # Поток не поддерживает seek/read — проверка сигнатуры невозможна,
+            # пропускаем её (fail open).
+            head = None
+        if head is not None and head != expected:
+            raise UploadError(f"Содержимое файла не соответствует расширению {ext}")
 
     upload_id = uuid.uuid4().hex
     path = os.path.join(upload_dir, f"{upload_id}{ext}")
