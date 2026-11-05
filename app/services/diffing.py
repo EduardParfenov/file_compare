@@ -85,6 +85,8 @@ def normalize_blocks(blocks: list[dict]) -> list[dict]:
         text = re.sub(r"[ \t]+", " ", block["text"]).strip(" \t")
         if not text and not block.get("images"):
             continue
+        # Поле `cells` (если присутствует) копируется как есть — не пере-parсится
+        # из текста и не схлопывается, чтобы сохранить исходные тексты ячеек.
         normalized.append({**block, "text": text})
     return normalized
 

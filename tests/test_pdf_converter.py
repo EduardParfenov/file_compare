@@ -176,6 +176,17 @@ class TestHtmlInvariant:
         block = pc.build_block("| a | b |", "tr")
         assert block["html"] == "<td>a</td><td>b</td>"
 
+    def test_build_block_with_cells(self):
+        import html as html_module
+        import re
+
+        block = pc.build_block("| Товар | Цена |", "tr", cells=["Товар", "Цена"])
+        assert block["cells"] == ["Товар", "Цена"]
+        assert block["html"] == "<td>Товар</td><td>Цена</td>"
+        plain = html_module.unescape(re.sub(r"<[^>]+>", "", block["html"]))
+        assert plain == "ТоварЦена"
+        assert block["text"] == "| Товар | Цена |"
+
     def test_markup_in_text_is_escaped(self):
 
         block = pc.build_block("<script>x</script>", "p")
