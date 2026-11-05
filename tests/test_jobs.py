@@ -558,7 +558,7 @@ class TestJobStatus:
         client = app.test_client()
         bad = client.post(
             "/api/upload",
-            data={"file": (io.BytesIO(b"not a docx"), "bad.docx")},
+            data={"file": (io.BytesIO(b"PK\x03\x04not a docx"), "bad.docx")},
             content_type="multipart/form-data",
         ).get_json()["upload_id"]
         good = upload_docx(client, "good.docx", ["А"])

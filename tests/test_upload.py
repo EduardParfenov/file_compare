@@ -27,8 +27,8 @@ def upload(client, filename, data=b"content"):
 
 
 def test_upload_docx_success(client, app):
-    # Когда клиент загружает .docx
-    response = upload(client, "report_v1.docx")
+    # Когда клиент загружает .docx с ZIP-сигнатурой
+    response = upload(client, "report_v1.docx", data=b"PK\x03\x04content")
     # То ответ 200 с upload_id и именем файла, файл сохранён в UPLOAD_DIR
     assert response.status_code == 200
     body = response.get_json()
@@ -43,8 +43,8 @@ def test_upload_docx_success(client, app):
 
 def test_upload_same_name_twice_saves_both(client, app):
     # Когда клиент дважды загружает файл с одним и тем же именем
-    first = upload(client, "report.docx", data=b"v1").get_json()
-    second = upload(client, "report.docx", data=b"v2").get_json()
+    first = upload(client, "report.docx", data=b"PK\x03\x04v1").get_json()
+    second = upload(client, "report.docx", data=b"PK\x03\x04v2").get_json()
     # То оба файла сохранены под уникальными именами и доступны в реестре
     assert first["upload_id"] != second["upload_id"]
     import os
@@ -56,8 +56,8 @@ def test_upload_same_name_twice_saves_both(client, app):
     path1 = uploads.get_upload_path(first["upload_id"])
     path2 = uploads.get_upload_path(second["upload_id"])
     assert path1 != path2
-    assert Path(path1).read_bytes() == b"v1"
-    assert Path(path2).read_bytes() == b"v2"
+    assert Path(path1).read_bytes() == b"PK\x03\x04v1"
+    assert Path(path2).read_bytes() == b"PK\x03\x04v2"
 
 
 def test_upload_rejects_unsupported_extension(client, app):
@@ -73,7 +73,7 @@ def test_upload_rejects_unsupported_extension(client, app):
 
 def test_upload_cyrillic_filename_accepted(client, app):
     # Когда клиент загружает файл с кириллическим именем и допустимым расширением
-    response = upload(client, "документ.docx")
+    response = upload(client, "документ.docx", data=b"PK\x03\x04content")
     # То ответ 200, имя в ответе — исходное, файл сохранён с расширением .docx
     assert response.status_code == 200
     body = response.get_json()
@@ -88,7 +88,7 @@ def test_upload_cyrillic_filename_accepted(client, app):
 
 def test_upload_cyrillic_pdf_accepted(client, app):
     # Когда клиент загружает PDF с кириллическим именем
-    response = upload(client, "Отчёт.pdf")
+    response = upload(client, "Отчёт.pdf", data=b"%PDFcontent")
     # То ответ 200, имя в ответе исходное, расширение .pdf
     assert response.status_code == 200
     body = response.get_json()
@@ -116,6 +116,30 @@ def test_upload_without_file_field(client):
     assert "error" in response.get_json()
 
 
+def test_upload_docx_wrong_content_rejected(client, app):
+    # Когда клиент загружает файл с расширением .docx, но содержимым не ZIP
+    response = upload(client, "fake.docx", data=b"just some text content")
+    # То ответ 400 с сообщением о несоответствии содержимого и расширению
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body["error"] == "Содержимое файла не соответствует расширению .docx"
+    import os
+
+    assert os.listdir(app.config["UPLOAD_DIR"]) == []
+
+
+def test_upload_pdf_wrong_content_rejected(client, app):
+    # Когда клиент загружает файл с расширением .pdf, но содержимым не %PDF
+    response = upload(client, "fake.pdf", data=b"just some text content")
+    # То ответ 400 с сообщением о несоответствии содержимого и расширению
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body["error"] == "Содержимое файла не соответствует расширению .pdf"
+    import os
+
+    assert os.listdir(app.config["UPLOAD_DIR"]) == []
+
+
 def test_upload_too_large(app):
     app.config["MAX_CONTENT_LENGTH"] = 10
     client = app.test_client()
@@ -130,7 +154,7 @@ def test_concurrent_uploads_all_ids_available(client, app):
     from app.services import uploads
 
     def make(index):
-        return upload(client, f"file{index}.docx").get_json()
+        return upload(client, f"file{index}.docx", data=b"PK\x03\x04content").get_json()
 
     with ThreadPoolExecutor(max_workers=20) as pool:
         bodies = list(pool.map(make, range(20)))
