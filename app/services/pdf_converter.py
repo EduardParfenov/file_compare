@@ -78,7 +78,7 @@ def has_text_layer(path: str) -> bool:
 
 
 def _clean(text: str) -> str:
-    return " ".join(text.split())
+    return re.sub(r"[ \t]+", " ", text).strip(" \t")
 
 
 def _parse_markdown(markdown: str) -> list[dict]:
@@ -302,7 +302,7 @@ def _page_lines(page) -> list[tuple[float, str]]:
 
 def _merge_lines(lines: list[tuple[float, list[dict]]]) -> tuple[float, str]:
     top = lines[0][0]
-    text = " ".join(word["text"] for _, line in lines for word in line)
+    text = "\n".join(" ".join(word["text"] for word in line) for _, line in lines)
     return top, _clean(text)
 
 

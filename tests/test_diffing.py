@@ -21,11 +21,17 @@ class TestNormalizeBlocks:
         assert [b["text"] for b in blocks] == ["Текст с неразрывными пробелами"]
 
     def test_empty_blocks_dropped(self):
-        # Блоки без текста и изображений отбрасываются
+        # Блоки без текста и изображений отбрасываются.
+        # Блок только с переносом строки не пуст: \\n сохраняется.
         blocks = normalize_blocks(
             [make_block("А"), make_block("  \n\t "), make_block("Б")]
         )
-        assert [b["text"] for b in blocks] == ["А", "Б"]
+        assert [b["text"] for b in blocks] == ["А", "\n", "Б"]
+
+    def test_newline_preserved_in_normalization(self):
+        # Перенос строки внутри абзаца не схлопывается в пробел
+        blocks = normalize_blocks([make_block("строка1\nстрока2")])
+        assert [b["text"] for b in blocks] == ["строка1\nстрока2"]
 
     def test_image_only_block_kept(self):
         # Блок без текста, но с изображением — содержимое есть, не отбрасывается
