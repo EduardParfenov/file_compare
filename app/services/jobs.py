@@ -11,6 +11,7 @@ from app.services.conversion import convert_document, convert_pdf_pair
 from app.services.diffing import (
     find_diffs,
     inline_diff,
+    is_formatting_only,
     is_table_row,
     is_table_separator,
     normalize_blocks,
@@ -145,7 +146,11 @@ def run_pipeline(
         labels, semantic = classify_fragments(fragments, chat)
 
         rows = _build_rows(
-            conversion["blocks1"], conversion["blocks2"], fragments, labels
+            conversion["blocks1"],
+            conversion["blocks2"],
+            fragments,
+            labels,
+            is_pdf=conversion["is_pdf"],
         )
         identical = conversion["is_pdf"] and _documents_identical(
             rows, fragments, conversion
@@ -548,11 +553,21 @@ def _image_subrows(old: dict, new: dict) -> list[dict]:
     return rows
 
 
-def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
+def _build_rows(
+    blocks1: list[dict],
+    blocks2: list[dict],
+    fragments: list[dict],
+    labels: list[dict],
+    is_pdf: bool = False,
+) -> list[dict]:
     """Выровненные строки side-by-side: {left, right}, None — пустое место.
 
     Фрагменты упорядочены и без пропусков покрывают различающиеся области;
     промежутки между ними — одинаковые блоки обоих документов.
+
+    Для `.pdf` фрагменты, попадающие под правила оформления (пункты 1, 2, 5, 6
+    proposal) или классифицированные как «formatting», не подсвечиваются как
+    изменения: их блоки показываются без класса различий.
     """
     rows = []
     pos1 = pos2 = 0  # позиции, до которых документы совпадают
@@ -584,43 +599,60 @@ def _build_rows(blocks1, blocks2, fragments, labels) -> list[dict]:
         emit_equal(i1, j1)
         old = blocks1[i1:i2]
         new = blocks2[j1:j2]
+        # Фрагмент считается оформлением (не изменением), если LLM вернула
+        # метку "formatting", либо для .pdf текстовые блоки пары равны по
+        # ключу оформления (пункты 1, 2, 5, 6 proposal).
+        is_formatting_fragment = label["label"] == "formatting" or (
+            is_pdf
+            and len(old) == len(new)
+            and all(
+                is_formatting_only(o["text"], n["text"])
+                for o, n in zip(old, new, strict=True)
+            )
+        )
         for k in range(max(len(old), len(new))):
-            left = (
-                _row_side(old[k], _side_change(label["label"], "left"))
-                if k < len(old)
-                else None
-            )
-            right = (
-                _row_side(new[k], _side_change(label["label"], "right"))
-                if k < len(new)
-                else None
-            )
-            # Односторонняя строка (чистый insert/delete или хвост
-            # replace-фрагмента): класс структурный, метка классификации
-            # применима только к парным строкам — иначе, например, insert
-            # с меткой changed (LLM видит "(пусто)" для картиночных
-            # блоков) оставляет заглушку без подсветки
-            if left is None:
-                right["change"] = "added"
-            elif right is None:
-                left["change"] = "removed"
-            # Изменённая пара: пословный diff для подсветки только
-            # различающихся слов (для строк таблиц — по ячейкам)
-            if left and right and label["label"] == "changed":
-                if "cells" in left and "cells" in right:
-                    left_segs, right_segs = [], []
-                    for a, b in zip_longest(
-                        left["cells"], right["cells"], fillvalue=""
-                    ):
-                        pair = inline_diff(a, b) or _cell_fallback_segments(a, b)
-                        left_segs.append(pair[0])
-                        right_segs.append(pair[1])
-                    left["cell_segments"] = left_segs
-                    right["cell_segments"] = right_segs
-                elif "sep" not in left and "sep" not in right:
-                    segments = inline_diff(old[k]["text"], new[k]["text"])
-                    if segments:
-                        left["segments"], right["segments"] = segments
+            if is_formatting_fragment:
+                # Оформление не подсвечивается: показываем оба блока без
+                # класса различия.
+                left = _row_side(old[k], None) if k < len(old) else None
+                right = _row_side(new[k], None) if k < len(new) else None
+            else:
+                left = (
+                    _row_side(old[k], _side_change(label["label"], "left"))
+                    if k < len(old)
+                    else None
+                )
+                right = (
+                    _row_side(new[k], _side_change(label["label"], "right"))
+                    if k < len(new)
+                    else None
+                )
+                # Односторонняя строка (чистый insert/delete или хвост
+                # replace-фрагмента): класс структурный, метка классификации
+                # применима только к парным строкам — иначе, например, insert
+                # с меткой changed (LLM видит "(пусто)" для картиночных
+                # блоков) оставляет заглушку без подсветки
+                if left is None:
+                    right["change"] = "added"
+                elif right is None:
+                    left["change"] = "removed"
+                # Изменённая пара: пословный diff для подсветки только
+                # различающихся слов (для строк таблиц — по ячейкам)
+                if left and right and label["label"] == "changed":
+                    if "cells" in left and "cells" in right:
+                        left_segs, right_segs = [], []
+                        for a, b in zip_longest(
+                            left["cells"], right["cells"], fillvalue=""
+                        ):
+                            pair = inline_diff(a, b) or _cell_fallback_segments(a, b)
+                            left_segs.append(pair[0])
+                            right_segs.append(pair[1])
+                        left["cell_segments"] = left_segs
+                        right["cell_segments"] = right_segs
+                    elif "sep" not in left and "sep" not in right:
+                        segments = inline_diff(old[k]["text"], new[k]["text"])
+                        if segments:
+                            left["segments"], right["segments"] = segments
             # Парная строка: при различающихся наборах изображений они
             # выносятся в под-строки; односторонняя — блок целиком со
             # своими изображениями напротив пустого места

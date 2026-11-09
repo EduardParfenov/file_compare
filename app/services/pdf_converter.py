@@ -35,6 +35,10 @@ _HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(.*)$")
 _LIST_RE = re.compile(r"^\s*([-*+]|\d+[.)])\s+(.*)$")
 _TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
 
+# Символы-маркеры маркированных списков, которые pdfplumber иногда не
+# включает в extract_words()/extract_text(), хотя они присутствуют на странице.
+_LIST_MARKER_CHARS = frozenset("*-•–—")
+
 
 class ConversionError(Exception):
     """Ошибка конвертации PDF."""
@@ -313,6 +317,12 @@ def _page_lines(page, words=None) -> list[tuple[float, str]]:
         else:
             lines.append((word["top"], [word]))
 
+    # Восстанавливаем маркеры списков, которые pdfplumber не включает в
+    # extract_words(), хотя символы присутствуют на странице (page.chars).
+    # Несколько разных маркеров (-/*/•) для одного и того же элемента списка
+    # в разных версиях документа не должны считаться изменением.
+    lines = _restore_list_markers(page, lines)
+
     paragraphs: list[tuple[float, str]] = []
     buffer: list[tuple[float, list[dict]]] = []
     previous_bottom: float | None = None
@@ -326,6 +336,80 @@ def _page_lines(page, words=None) -> list[tuple[float, str]]:
         paragraphs.append(_merge_lines(buffer))
 
     return paragraphs
+
+
+def _restore_list_markers(
+    page,
+    lines: list[tuple[float, list[dict]]],
+) -> list[tuple[float, list[dict]]]:
+    """Добавляет маркеры списков к beginnings строк, если pdfplumber не
+    выделил их как отдельные слова.
+
+    Символы `*`, `-`, `•`, `–`, `—` часто присутствуют на странице как
+    отдельные символы (page.chars), но не попадают в extract_words() из-за
+    особых шрифтов или позиционирования. Ищем маркер слева от первого слова
+    строки на той же вертикальной позиции и добавляем его как первое слово,
+    чтобы строка распозналась как элемент списка downstream (в _parse_markdown
+    и при сравнении текстов).
+    """
+    try:
+        chars = page.chars
+    except Exception:  # noqa: BLE001 — причина уходит в журнал
+        logs.log_warning(
+            logger, "Символы страницы не извлечены, пропуск восстановления маркеров"
+        )
+        return lines
+    if not chars or not lines:
+        return lines
+
+    # Собираем маркеры, отсортированные по вертикали, затем по горизонтали
+    markers = sorted(
+        (c for c in chars if c["text"] in _LIST_MARKER_CHARS),
+        key=lambda c: (round(c["top"], 1), c["x0"]),
+    )
+    if not markers:
+        return lines
+
+    result: list[tuple[float, list[dict]]] = []
+    for top, line_words in lines:
+        if not line_words:
+            result.append((top, line_words))
+            continue
+
+        # Если первая строка уже начинается с маркера — не дублируем
+        first_text = line_words[0]["text"]
+        if first_text in _LIST_MARKER_CHARS:
+            result.append((top, line_words))
+            continue
+
+        first_word = line_words[0]
+        marker = None
+        marker_char = None
+        for char in markers:
+            # Маркеры ниже текущей строки — можно прекратить поиск для неё
+            if char["top"] > top + 3:
+                break
+            if abs(char["top"] - top) > 3:
+                continue
+            # Маркер должен быть слева от первого слова с небольшим зазором
+            if char["x1"] <= first_word["x0"] - 2:
+                marker = char["text"]
+                marker_char = char
+                break
+
+        if marker is not None and marker_char is not None:
+            marker_word = {
+                "text": marker,
+                "x0": marker_char["x0"],
+                "x1": marker_char["x1"],
+                "top": marker_char["top"],
+                "bottom": marker_char["bottom"],
+            }
+            line_words = [marker_word, *line_words]
+
+        result.append((top, line_words))
+
+    return result
 
 
 def _merge_lines(

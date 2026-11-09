@@ -836,6 +836,92 @@ class TestOneSidedRowClassification:
         assert "segments" in row["left"]
 
 
+class TestPdfFormattingFilter:
+    """Правила оформления PDF не подсвечиваются как изменения
+    (spec: document-diff, «Нормализация блоков документа»)."""
+
+    def _make_block(self, text):
+        return {"text": text, "html": f"<p>{text}</p>", "images": []}
+
+    def _build(self, blocks1, blocks2, fragments, labels, is_pdf=True):
+        return jobs._build_rows(blocks1, blocks2, fragments, labels, is_pdf=is_pdf)
+
+    def _replace_frag(self, old_text, new_text):
+        return {
+            "opcode": "replace",
+            "old_blocks": [old_text],
+            "new_blocks": [new_text],
+            "old_range": (0, 1),
+            "new_range": (0, 1),
+        }
+
+    def test_spaces_around_punctuation_not_highlighted(self, make_app):
+        # Пробелы вокруг знака препинания — не изменение (пункт 5)
+        blocks1 = [self._make_block("слово, слово")]
+        blocks2 = [self._make_block("слово , слово")]
+        frag = self._replace_frag("слово, слово", "слово , слово")
+        labels = [{"label": "changed", "semantic": True}]
+        rows = self._build(blocks1, blocks2, [frag], labels, is_pdf=True)
+        (row,) = rows
+        assert row["left"]["change"] is None
+        assert row["right"]["change"] is None
+
+    def test_multiple_punctuation_not_highlighted(self, make_app):
+        # Несколько знаков пунктуации подряд — не изменение (пункт 1)
+        blocks1 = [self._make_block("Текст…")]
+        blocks2 = [self._make_block("Текст..")]
+        frag = self._replace_frag("Текст…", "Текст..")
+        labels = [{"label": "changed", "semantic": True}]
+        rows = self._build(blocks1, blocks2, [frag], labels, is_pdf=True)
+        (row,) = rows
+        assert row["left"]["change"] is None
+        assert row["right"]["change"] is None
+
+    def test_list_marker_not_highlighted(self, make_app):
+        # Разные маркеры списка — не изменение (пункт 3)
+        blocks1 = [self._make_block("- элемент")]
+        blocks2 = [self._make_block("* элемент")]
+        frag = self._replace_frag("- элемент", "* элемент")
+        labels = [{"label": "changed", "semantic": True}]
+        rows = self._build(blocks1, blocks2, [frag], labels, is_pdf=True)
+        (row,) = rows
+        assert row["left"]["change"] is None
+        assert row["right"]["change"] is None
+
+    def test_real_change_still_highlighted_for_pdf(self, make_app):
+        # Изменение смысла в PDF подсвечивается
+        blocks1 = [self._make_block("срок один год")]
+        blocks2 = [self._make_block("срок два года")]
+        frag = self._replace_frag("срок один год", "срок два года")
+        labels = [{"label": "changed", "semantic": True}]
+        rows = self._build(blocks1, blocks2, [frag], labels, is_pdf=True)
+        (row,) = rows
+        assert row["left"]["change"] == "changed"
+        assert row["right"]["change"] == "changed"
+
+    def test_docx_not_affected_by_formatting_rules(self, make_app):
+        # Для .docx правила оформления не применяются
+        blocks1 = [self._make_block("слово, слово")]
+        blocks2 = [self._make_block("слово , слово")]
+        frag = self._replace_frag("слово, слово", "слово , слово")
+        labels = [{"label": "changed", "semantic": True}]
+        rows = self._build(blocks1, blocks2, [frag], labels, is_pdf=False)
+        (row,) = rows
+        assert row["left"]["change"] == "changed"
+        assert row["right"]["change"] == "changed"
+
+    def test_formatting_label_not_highlighted(self, make_app):
+        # LLM-метка formatting не подсвечивается
+        blocks1 = [self._make_block("Абзац")]
+        blocks2 = [self._make_block("Другой текст")]
+        frag = self._replace_frag("Абзац", "Другой текст")
+        labels = [{"label": "formatting", "semantic": True}]
+        rows = self._build(blocks1, blocks2, [frag], labels, is_pdf=True)
+        (row,) = rows
+        assert row["left"]["change"] is None
+        assert row["right"]["change"] is None
+
+
 class TestRegistryConcurrency:
     """Конкурентный доступ к реестру задач (spec: comparison-jobs)."""
 

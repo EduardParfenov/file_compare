@@ -3,6 +3,7 @@
 from app.services.diffing import (
     find_diffs,
     inline_diff,
+    is_formatting_only,
     is_table_separator,
     normalize_blocks,
     parse_table_row,
@@ -287,6 +288,50 @@ class TestInlineDiff:
         left, right = inline_diff("одинаковый текст", "одинаковый текст")
         assert all(s["type"] == "same" for s in left)
         assert all(s["type"] == "same" for s in right)
+
+
+class TestFormattingKey:
+    """Правила оформления PDF не считаются изменением (spec: document-diff)."""
+
+    def test_multiple_punctuation_equal(self):
+        # Несколько знаков пунктуации подряд — не изменение
+        assert is_formatting_only("Текст…", "Текст..")
+        assert is_formatting_only("Текст…", "Текст....")
+
+    def test_nbsp_equiv_space(self):
+        # Неразрывный пробел эквивалентен обычному (пункт 2)
+        nbsp = "\u00a0"
+        assert is_formatting_only(f"сло{nbsp}во", "сло во")
+        assert is_formatting_only(
+            "слово", f"слово{nbsp}"
+        )  # NBSP в конце = пробел в конце
+        # Обычный пробел, разбивающий слово, меняет смысл — это изменение
+        assert not is_formatting_only("слово", "сло во")
+
+    def test_list_marker_ignored(self):
+        # Разные маркеры маркированного списка — не изменение (пункт 3)
+        assert is_formatting_only("- элемент", "* элемент")
+        assert is_formatting_only("- элемент", "• элемент")
+
+    def test_spaces_around_punctuation_ignored(self):
+        # Пробелы до/after знака препинания — не изменение (пункт 5)
+        assert is_formatting_only("слово, слово", "слово , слово")
+        assert is_formatting_only("слово, слово", "слово,  слово")
+        assert is_formatting_only("слово. слово", "слово . слово")
+
+    def test_spaces_around_word_ignored(self):
+        # Пробелы до и после слова — не изменение (пункт 6)
+        assert is_formatting_only("слово", " слово ")
+        assert is_formatting_only("слово", "  слово")
+
+    def test_real_change_not_formatting(self):
+        # Изменение смысла — не оформление
+        assert not is_formatting_only("срок один год", "срок два года")
+        assert not is_formatting_only("Привет", "До свидания")
+
+    def test_combined_formatting(self):
+        # Комбинация правил (маркер, пробелы вокруг пунктуации, точка в конце)
+        assert is_formatting_only("- пункт, слово.", "* пункт , слово.")
 
 
 class TestParseTableRow:
