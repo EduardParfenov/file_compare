@@ -17,7 +17,7 @@ from app.services import logs
 
 logger = logging.getLogger(__name__)
 
-VALID_LABELS = {"changed", "removed", "added"}
+VALID_LABELS = {"changed", "removed", "added", "formatting"}
 
 FALLBACK_BY_OPCODE = {
     "replace": "changed",
@@ -35,8 +35,12 @@ SYSTEM_PROMPT = (
     "Ты — классификатор изменений документов. Тебе дан старый и новый "
     "фрагменты документа. Определи тип изменения и ответь строго одним "
     'JSON-объектом вида {"label": "changed"} без пояснений. '
-    'Допустимые значения label: "changed" (фрагмент изменён), '
-    '"removed" (фрагмент удалён), "added" (фрагмент добавлен).'
+    "Допустимые значения label: "
+    '"changed" (фрагмент изменён по содержанию), '
+    '"removed" (фрагмент удалён), '
+    '"added" (фрагмент добавлен), '
+    '"formatting" (изменение только оформления — знаки препинания, '
+    "пробелы, маркеры списков и подобное, без изменения смысла)."
 )
 
 

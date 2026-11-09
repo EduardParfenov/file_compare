@@ -103,6 +103,28 @@ class TestTextLayerBlocks:
         assert "Second page content" in texts
         assert [block["page"] for block in blocks][-1] == 2
 
+    def test_list_markers_preserved(self, tmp_path):
+        """Маркеры списков извлекаются как часть текста блока
+        (специфика pdfplumber: иногда маркеры не попадают в extract_words,
+        но присутствуют в page.chars — _restore_list_markers их восстанавливает)."""
+        path = write_text_pdf(
+            tmp_path / "t.pdf",
+            [
+                [
+                    (30, 340, "* First list item"),
+                    (30, 326, "- Second list item"),
+                    (30, 312, "Ordinary paragraph without marker"),
+                ],
+            ],
+        )
+        blocks = pc.convert_pdf_text_layer(path)
+        texts = [block["text"] for block in blocks]
+        assert len(texts) == 1
+        joined = texts[0]
+        assert "* First list item" in joined
+        assert "- Second list item" in joined
+        assert "Ordinary paragraph without marker" in joined
+
     def test_block_contract_fields(self, tmp_path):
         path = write_text_pdf(tmp_path / "t.pdf", [[(30, 300, "Report")]])
         block = pc.convert_pdf_text_layer(path)[0]

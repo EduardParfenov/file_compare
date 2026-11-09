@@ -113,6 +113,35 @@ class TestClassifyFragment:
         assert chat.calls == 1
         assert result == {"label": "changed", "semantic": False}
 
+    def test_formatting_label(self):
+        # Дано LLM возвращает formatting для похожего replace-фрагмента
+        chat = MockChat(['{"label": "formatting"}'])
+        result = classify_fragment(make_fragment("replace"), chat)
+        # То фрагмент классифицирован как formatting с семантикой
+        assert result == {"label": "formatting", "semantic": True}
+
+    def test_formatting_label_wrapped_in_text(self):
+        # Дано formatting обёрнут в пояснения
+        chat = MockChat(['Ответ: {"label": "formatting"} спасибо'])
+        result = classify_fragment(make_fragment("replace"), chat)
+        assert result["label"] == "formatting"
+        assert result["semantic"] is True
+
+    def test_formatting_invalid_then_fallback(self):
+        # Дано первый ответ formatting невалиден, повторный — валидный changed
+        chat = MockChat(["непонятно", '{"label": "changed"}'])
+        result = classify_fragment(make_fragment("replace"), chat)
+        assert chat.calls == 2
+        assert result == {"label": "changed", "semantic": True}
+
+    def test_formatting_degradation_on_connection_error(self):
+        # Дано LLM недоступна для replace-фрагмента
+        chat = MockChat([ConnectionError("no route")])
+        # То деградация на replace → changed, не formatting
+        result = classify_fragment(make_fragment("replace"), chat)
+        assert chat.calls == 1
+        assert result == {"label": "changed", "semantic": False}
+
 
 class TestClassifyFragments:
     def test_all_semantic(self):
